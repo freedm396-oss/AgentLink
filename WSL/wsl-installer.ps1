@@ -1,6 +1,7 @@
 ﻿<#
 .SYNOPSIS
     WSL Manager Script - Fixed filesystem wait hang issue and .wslconfig encoding
+    新增：支持离线安装，使用 Ubuntu 官方云镜像（国内可访问）
 #>
 
 [CmdletBinding()]
@@ -166,6 +167,124 @@ firewall=true
     }
 }
 
+# ========== 新增：离线安装函数（使用 Ubuntu 官方云镜像，国内可访问） ==========
+function Install-WSL-Offline {
+    param([string]$Distro)
+    
+    Write-Step "Preparing offline installation for $Distro..."
+    
+    # Ubuntu 官方云镜像 URL（国内通常可访问，无需翻墙）
+    $distroUrls = @{
+        "Ubuntu-24.04" = "https://cloud-images.ubuntu.com/wsl/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
+        "Ubuntu-22.04" = "https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-wsl.rootfs.tar.gz"
+        "Ubuntu-20.04" = "https://cloud-images.ubuntu.com/wsl/focal/current/ubuntu-focal-wsl-amd64-wsl.rootfs.tar.gz"
+        "Ubuntu"       = "https://cloud-images.ubuntu.com/wsl/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
+    }
+    
+    # 备选：清华镜像（如果 ubuntu.com 访问缓慢）
+    $mirrorUrls = @{
+        "Ubuntu-24.04" = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
+        "Ubuntu-22.04" = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/jammy/current/ubuntu-jammy-wsl-amd64-wsl.rootfs.tar.gz"
+        "Ubuntu-20.04" = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/focal/current/ubuntu-focal-wsl-amd64-wsl.rootfs.tar.gz"
+        "Ubuntu"       = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
+    }
+    
+    $url = $distroUrls[$Distro]
+    if (-not $url) {
+        Write-Warn "Unknown distro: $Distro, defaulting to Ubuntu-24.04"
+        $url = $distroUrls["Ubuntu-24.04"]
+    }
+    
+    $tempFile = "$env:TEMP\wsl-$Distro-rootfs.tar.gz"
+    
+    # 尝试下载（主源 + 镜像源）
+    $downloadSuccess = $false
+    foreach ($source in @($url, $mirrorUrls[$Distro])) {
+        if (-not $source) { continue }
+        
+        try {
+            Write-Info "Trying download from: $source"
+            
+            # 使用后台作业下载，带 2 分钟超时
+            $job = Start-Job {
+                param($uri, $out)
+                try {
+                    Invoke-WebRequest -Uri $uri -OutFile $out -UseBasicParsing -MaximumRedirection 5
+                    return $true
+                } catch {
+                    return $false
+                }
+            } -ArgumentList $source, $tempFile
+            
+            Write-Info "Downloading... (timeout: 120s)"
+            $jobResult = Wait-Job $job -Timeout 120
+            
+            if ($jobResult) {
+                $downloadResult = Receive-Job $job
+                Remove-Job $job
+                
+                if ($downloadResult -and (Test-Path $tempFile)) {
+                    $fileSize = (Get-Item $tempFile).Length
+                    if ($fileSize -gt 100MB) {
+                        $downloadSuccess = $true
+                        Write-Ok "Downloaded: $([math]::Round($fileSize / 1MB, 2)) MB"
+                        break
+                    } else {
+                        Write-Warn "Downloaded file too small ($fileSize bytes), trying next source..."
+                        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            } else {
+                Stop-Job $job
+                Remove-Job $job -Force
+                Write-Warn "Download timeout, trying next source..."
+            }
+        } catch {
+            Write-Warn "Download failed: $_"
+        }
+    }
+    
+    if (-not $downloadSuccess) {
+        Write-Err "All download sources failed"
+        Write-Info "Please manually download the rootfs file from:"
+        Write-Info "  https://cloud-images.ubuntu.com/wsl/"
+        Write-Info "Or Tsinghua mirror:"
+        Write-Info "  https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/"
+        Write-Info "Then run: wsl --import $Distro <install-path> <downloaded-file> --version 2"
+        return $false
+    }
+    
+    # 导入到 WSL
+    try {
+        Write-Step "Importing to WSL..."
+        
+        $installPath = "$env:LOCALAPPDATA\Packages\WSL\$Distro"
+        if (-not (Test-Path $installPath)) {
+            New-Item -ItemType Directory -Path $installPath -Force | Out-Null
+        }
+        
+        Write-Info "Importing to: $installPath"
+        $importOutput = wsl --import $Distro $installPath $tempFile --version 2 2>&1
+        
+        if ($LASTEXITCODE -ne 0) {
+            throw "WSL import failed: $importOutput"
+        }
+        
+        # 清理临时文件
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        Write-Ok "Offline installation completed successfully"
+        return $true
+        
+    } catch {
+        Write-Err "Import failed: $_"
+        # 保留文件供用户手动导入
+        Write-Info "Rootfs file preserved at: $tempFile"
+        Write-Info "You can manually import with:"
+        Write-Info "  wsl --import $Distro <path> `"$tempFile`" --version 2"
+        return $false
+    }
+}
+
 # ========== Install with better error handling ==========
 function Install-WSL {
     Write-Host "=== WSL Installation ===" -ForegroundColor Cyan
@@ -223,52 +342,110 @@ function Install-WSL {
     Write-Step "Configuring WSL2..."
     try {
         wsl --set-default-version 2 2>$null
-        wsl --update 2>$null
+        Write-Ok "WSL2 set as default"
     } catch {
-        Write-Warn "WSL2 config error: $_"
+        Write-Warn "WSL2 default setting error: $_"
+    }
+
+    # 修改：添加错误处理的 wsl --update
+    try {
+        $updateOutput = wsl --update 2>&1
+        if ($LASTEXITCODE -ne 0 -or $updateOutput -match "无法与服务器建立连接|WININET_E_CANNOT_CONNECT|cannot connect|failed") {
+            Write-Warn "WSL update failed (network issue, continuing...)"
+            Write-Info "This is normal in restricted network environments"
+        } else {
+            Write-Ok "WSL kernel updated"
+        }
+    } catch {
+        Write-Warn "WSL update error: $_"
+        Write-Info "Continuing installation..."
     }
     Write-Ok "WSL2 configured"
 
-    # 3. Install distro
+    # 3. Install distro（修改为支持离线安装）
     if (-not $existing) {
         Write-Step "Installing $Distro..."
         Write-Info "This may take 5-10 minutes..."
         
+        # 尝试在线安装（短时间检测），失败则转离线安装
+        $installSuccess = $false
+        $useOffline = $false
+        
         try {
-            # Use --no-launch to avoid blocking
-            $proc = Start-Process -FilePath "wsl.exe" -ArgumentList "--install", "-d", $Distro, "--no-launch" -Wait -PassThru -WindowStyle Normal
+            Write-Info "Attempting online installation (Microsoft Store)..."
+            Write-Info "Waiting 60 seconds to detect if store is accessible..."
             
-            if ($proc.ExitCode -ne 0) {
-                Write-Warn "Install returned exit code $($proc.ExitCode)"
-            }
+            $proc = Start-Process -FilePath "wsl.exe" -ArgumentList "--install", "-d", $Distro, "--no-launch" -PassThru -WindowStyle Normal
             
-            Write-Ok "Package installation initiated"
-            
-            # Wait for distro to appear
-            Write-Info "Waiting for installation to complete..."
-            $timeout = 600
+            # 等待最多 60 秒检测安装进度
             $timer = 0
-            
-            while (-not (Test-DistroInstalled $Distro) -and $timer -lt $timeout) {
+            $installDetected = $false
+            while (-not $proc.HasExited -and $timer -lt 60) {
                 Start-Sleep -Seconds 5
                 $timer += 5
+                
+                # 检查是否已安装
+                if (Test-DistroInstalled $Distro) {
+                    $installDetected = $true
+                    Write-Ok "Online installation detected"
+                    break
+                }
+                
+                # 每 30 秒显示进度
                 if ($timer % 30 -eq 0) {
                     Write-Host "    ... waited $timer seconds" -ForegroundColor Gray
                 }
             }
             
-            if (-not (Test-DistroInstalled $Distro)) {
-                throw "Timeout waiting for installation after $timeout seconds"
+            # 根据检测结果决定后续操作
+            if ($installDetected) {
+                # 等待安装完成（最多再等待 5 分钟）
+                Write-Info "Waiting for installation to complete..."
+                $completionTimer = 0
+                while (-not (Test-WSLResponsive $Distro 3) -and $completionTimer -lt 300) {
+                    Start-Sleep -Seconds 10
+                    $completionTimer += 10
+                    if ($completionTimer % 60 -eq 0) {
+                        Write-Host "    ... configuring for $completionTimer seconds" -ForegroundColor Gray
+                    }
+                }
+                
+                if (Test-DistroInstalled $Distro) {
+                    $installSuccess = $true
+                    Write-Ok "$Distro installed via Microsoft Store"
+                }
+                
+                # 确保进程结束
+                if (-not $proc.HasExited) {
+                    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                }
+            } else {
+                # 60秒内没有检测到安装，判定为网络问题
+                if (-not $proc.HasExited) {
+                    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                }
+                Write-Warn "Microsoft Store installation appears blocked (network issue)"
+                $useOffline = $true
             }
             
-            Write-Ok "$Distro is installed"
-            
         } catch {
-            Write-Err "Error during install: $_"
+            Write-Warn "Online installation error: $_"
+            $useOffline = $true
+        }
+        
+        # 如果在线安装失败，使用离线安装
+        if (-not $installSuccess -and $useOffline) {
+            Write-Info "Switching to offline installation method..."
+            $installSuccess = Install-WSL-Offline -Distro $Distro
+        }
+        
+        # 最终检查
+        if (-not $installSuccess) {
+            Write-Err "Failed to install $Distro"
             Write-Host "`nTroubleshooting:" -ForegroundColor Yellow
-            Write-Host "  1. Check Windows Store is accessible" -ForegroundColor White
-            Write-Host "  2. Try: wsl --install -d $Distro" -ForegroundColor White
-            Write-Host "  3. Check Windows Update" -ForegroundColor White
+            Write-Host "  1. Check internet connection" -ForegroundColor White
+            Write-Host "  2. Manual download: https://cloud-images.ubuntu.com/wsl/" -ForegroundColor White
+            Write-Host "  3. Manual import: wsl --import $Distro <path> <rootfs.tar.gz> --version 2" -ForegroundColor White
             return
         }
     }
@@ -496,8 +673,14 @@ function Update-WSL {
 
     Write-Step "Updating WSL kernel..."
     try {
-        wsl --update
-        Write-Ok "WSL kernel updated"
+        $updateOutput = wsl --update 2>&1
+        if ($LASTEXITCODE -ne 0 -or $updateOutput -match "无法与服务器建立连接|WININET_E_CANNOT_CONNECT|cannot connect") {
+            Write-Warn "WSL update failed due to network issues"
+            Write-Info "You can manually download the update from:"
+            Write-Info "  https://github.com/microsoft/WSL/releases"
+        } else {
+            Write-Ok "WSL kernel updated"
+        }
     } catch {
         Write-Warn "WSL update failed: $_"
     }
