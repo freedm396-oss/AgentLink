@@ -173,20 +173,22 @@ function Install-WSL-Offline {
     
     Write-Step "Preparing offline installation for $Distro..."
     
-    # Ubuntu 官方云镜像 URL（国内通常可访问，无需翻墙）
+    # Ubuntu 官方云镜像 URL（已测试验证可用）
+    # 注意：24.04 使用 releases 目录，22.04 使用 daily builds 目录
     $distroUrls = @{
-        "Ubuntu-24.04" = "https://cloud-images.ubuntu.com/wsl/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
-        "Ubuntu-22.04" = "https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-wsl.rootfs.tar.gz"
-        "Ubuntu-20.04" = "https://cloud-images.ubuntu.com/wsl/focal/current/ubuntu-focal-wsl-amd64-wsl.rootfs.tar.gz"
-        "Ubuntu"       = "https://cloud-images.ubuntu.com/wsl/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
+        "Ubuntu-24.04" = "https://cloud-images.ubuntu.com/wsl/releases/24.04/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz"
+        "Ubuntu-22.04" = "https://cloud-images.ubuntu.com/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz"
+        "Ubuntu-20.04" = "https://cloud-images.ubuntu.com/wsl/releases/20.04/current/ubuntu-focal-wsl-amd64-ubuntu20.04lts.rootfs.tar.gz"
+        "Ubuntu"       = "https://cloud-images.ubuntu.com/wsl/releases/24.04/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz"
     }
-    
-    # 备选：清华镜像（如果 ubuntu.com 访问缓慢）
+
+    # 备选：中科大镜像（国内访问，但有浏览器验证机制，可能需要用浏览器下载）
+    # 清华镜像已测试：403 拒绝访问（反爬虫），不建议使用
     $mirrorUrls = @{
-        "Ubuntu-24.04" = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
-        "Ubuntu-22.04" = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/jammy/current/ubuntu-jammy-wsl-amd64-wsl.rootfs.tar.gz"
-        "Ubuntu-20.04" = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/focal/current/ubuntu-focal-wsl-amd64-wsl.rootfs.tar.gz"
-        "Ubuntu"       = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/wsl/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
+        "Ubuntu-24.04" = "https://mirrors.ustc.edu.cn/ubuntu-cloud-images/wsl/releases/24.04/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz"
+        "Ubuntu-22.04" = "https://mirrors.ustc.edu.cn/ubuntu-cloud-images/wsl/jammy/current/ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz"
+        "Ubuntu-20.04" = "https://mirrors.ustc.edu.cn/ubuntu-cloud-images/wsl/releases/20.04/current/ubuntu-focal-wsl-amd64-ubuntu20.04lts.rootfs.tar.gz"
+        "Ubuntu"       = "https://mirrors.ustc.edu.cn/ubuntu-cloud-images/wsl/releases/24.04/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz"
     }
     
     $url = $distroUrls[$Distro]
