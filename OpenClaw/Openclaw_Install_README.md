@@ -96,6 +96,7 @@ WSL（Windows Subsystem for Linux）是运行 OpenClaw 的必要环境。
 cd AgentLink\WSL
 cat README.md
 ```
+***注意：如果 cat 命令执行后显示乱码，可在本地用记事本或者浏览器等工具打开该 README 文件进行查看***
 
 ### 2. 执行安装脚本
 
@@ -130,6 +131,7 @@ wsl --list --verbose
 cd ..\OpenClaw	ools\WSL_and_Linux
 cat README.md
 ```
+***注意：如果 cat 命令执行后显示乱码，可在本地用记事本或者浏览器等工具打开该 README 文件进行查看***
 
 ### 2. 执行安装脚本
 
