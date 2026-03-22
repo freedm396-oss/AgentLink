@@ -236,7 +236,7 @@ function Install-WSL {
         
         try {
             # Use --no-launch to avoid blocking
-            $proc = Start-Process -FilePath "wsl.exe" -ArgumentList "--install", "-d", $Distro, "--no-launch" -Wait -PassThru -WindowStyle Normal -NoNewWindow
+            $proc = Start-Process -FilePath "wsl.exe" -ArgumentList "--install", "-d", $Distro, "--no-launch" -Wait -PassThru -WindowStyle Normal
             
             if ($proc.ExitCode -ne 0) {
                 Write-Warn "Install returned exit code $($proc.ExitCode)"
