@@ -1,0 +1,78 @@
+# 默认配置文件
+
+extraction:
+  # 图片提取配置
+  min_image_size: 50          # 最小图片尺寸（像素）
+  max_image_size: 5000        # 最大图片尺寸
+  image_formats:              # 支持的图片格式
+    - png
+    - jpg
+    - jpeg
+    - bmp
+    - tiff
+    - gif
+  deduplicate: true           # 是否去重
+  parallel_pages: 4           # 并行处理的页数
+  max_pages: null             # 最大处理页数（null表示全部）
+  
+  # 性能配置
+  batch_size: 50              # 批处理大小
+  timeout: 300                # 超时时间（秒）
+  memory_limit: 1024          # 内存限制（MB）
+
+caption:
+  # 标题识别配置
+  enable: true                # 启用标题匹配
+  max_distance: 150           # 标题与图片最大距离（像素）
+  min_confidence: 0.6         # 最低置信度
+  custom_patterns: []         # 自定义匹配模式
+  
+  # 标题过滤
+  min_caption_length: 3       # 最小标题长度
+  max_caption_length: 200     # 最大标题长度
+
+chapter:
+  # 章节检测配置
+  detect: true                # 检测章节
+  max_depth: 3                # 最大层级深度
+  min_confidence: 0.7         # 最低置信度
+  patterns:                   # 启用的模式类型
+    - chinese
+    - english
+    - numbered
+  
+  # 章节名称映射
+  rename_rules:
+    前言: preface
+    目录: toc
+    参考文献: references
+    附录: appendix
+
+output:
+  # 输出配置
+  formats:                    # 输出格式
+    - json
+    - markdown
+    - csv
+    - html
+    - txt
+  
+  save_images: true           # 保存图片文件
+  image_quality: 85           # JPEG质量(1-100)
+  organize_by_chapter: true   # 按章节组织
+  create_index: true          # 创建索引文件
+  
+  # 文件命名
+  filename_template: "p{page:03d}_{chapter_slug}_{hash[:8]}.{ext}"
+  
+  # 报告配置
+  report_title: "PDF图片提取报告"
+  include_stats: true
+  include_thumbnails: false
+
+logging:
+  # 日志配置
+  level: INFO                 # DEBUG, INFO, WARNING, ERROR
+  file: extraction.log
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  console: true

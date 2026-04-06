@@ -1,0 +1,127 @@
+# 输出格式配置
+
+json:
+  # JSON输出配置
+  indent: 2
+  ensure_ascii: false
+  include_metadata: true
+  include_stats: true
+  filename: "figures.json"
+
+markdown:
+  # Markdown输出配置
+  filename: "图片索引.md"
+  template: |
+    # {{title}} - 图片索引
+    
+    **提取时间**: {{timestamp}}
+    **总图片数**: {{total_images}}
+    **总页数**: {{total_pages}}
+    
+    ## 📊 统计信息
+    - 成功提取: {{extracted_count}}
+    - 重复图片: {{duplicate_count}}
+    - 失败: {{failed_count}}
+    
+    ---
+    
+    {{#each chapters}}
+    ## {{chapter}}
+    
+    {{#each sections}}
+    ### {{section}}
+    
+    {{#each figures}}
+    **{{figure_number}}** (第{{page}}页)
+    
+    {{caption}}
+    
+    ![{{caption}}]({{relative_path}})
+    
+    ---
+    
+    {{/each}}
+    {{/each}}
+    {{/each}}
+  
+  # 是否包含缩略图
+  include_thumbnails: false
+  thumbnail_size: 200
+
+csv:
+  # CSV输出配置
+  filename: "figures.csv"
+  delimiter: ","
+  encoding: "utf-8-sig"
+  columns:
+    - index
+    - page
+    - chapter
+    - section
+    - figure_number
+    - caption
+    - filename
+    - image_type
+    - width
+    - height
+    - file_size_kb
+
+html:
+  # HTML输出配置
+  filename: "extraction_report.html"
+  title: "PDF图片提取报告"
+  theme: "light"  # light, dark, auto
+  include_charts: true
+  include_search: true
+  items_per_page: 50
+  sort_by: "page"  # page, chapter, size
+  sort_order: "asc"
+
+txt:
+  # 文本输出配置
+  filename: "图片列表.txt"
+  separator: "="
+  line_width: 80
+  format: |
+    {{title}} - 图片列表
+    {{separator * line_width}}
+    
+    提取时间: {{timestamp}}
+    总图片数: {{total_images}}
+    
+    {{#each figures}}
+    【{{figure_number}}】第{{page}}页
+      章节: {{chapter}}
+      {{#if section}}小节: {{section}}{{/if}}
+      标题: {{caption}}
+      文件: {{filename}}
+      尺寸: {{width}}x{{height}}
+    {{separator * 40}}
+    
+    {{/each}}
+
+# 图片命名规则
+naming:
+  # 模板变量
+  template: "p{page:03d}_{chapter_slug}_{hash[:8]}.{ext}"
+  
+  # 字符串清理规则
+  sanitize:
+    replace:
+      - ["[\\/:*?\"<>|]", "_"]  # 非法字符
+      - ["\\s+", "_"]            # 空白字符
+    max_length: 50
+  
+  # 中文转拼音（可选）
+  pinyin_conversion: false
+
+# 目录结构
+directories:
+  images: "images"
+  data: "data"
+  reports: "reports"
+  logs: "logs"
+  
+  # 按章节组织
+  by_chapter: true
+  chapter_template: "chapter_{number:02d}"

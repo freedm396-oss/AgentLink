@@ -1,0 +1,92 @@
+# 标题匹配模式配置
+
+caption_patterns:
+  # 中文模式
+  chinese:
+    - pattern: '[图圖]\s*(\d+[\.\\-]\d+)\s*[：:]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: standard
+      confidence: 0.95
+    - pattern: '[图圖]\s*(\d+[\.\\-]\d+)\s+([^\n]{1,200}?)(?=\n|$)'
+      type: standard_no_colon
+      confidence: 0.90
+    - pattern: '[图圖]\s*(\d+)\s*[：:]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: single
+      confidence: 0.85
+    - pattern: '[图圖]片\s*(\d+[\.\\-]?\d*)\s*[：:]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: picture
+      confidence: 0.85
+    - pattern: '插图\s*(\d+[\.\\-]?\d*)\s*[：:]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: illustration
+      confidence: 0.85
+  
+  # 英文模式
+  english:
+    - pattern: 'Figure\s+(\d+[\.\\-]\d+)[\.:\-]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: standard
+      confidence: 0.95
+    - pattern: 'Figure\s+(\d+)[\.:\-]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: single
+      confidence: 0.90
+    - pattern: 'Fig\.\s*(\d+[\.\\-]\d+)[\.:\-]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: abbreviated
+      confidence: 0.90
+    - pattern: 'Fig\.\s*(\d+)[\.:\-]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: abbreviated_single
+      confidence: 0.85
+  
+  # 其他模式
+  other:
+    - pattern: '图解\s*(\d+[\.\\-]?\d*)\s*[：:]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: diagram
+      confidence: 0.80
+    - pattern: '表\s*(\d+[\.\\-]?\d*)\s*[：:]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: table
+      confidence: 0.75
+    - pattern: '示意图\s*(\d+[\.\\-]?\d*)\s*[：:]\s*([^\n]{1,200}?)(?=\n|$)'
+      type: schematic
+      confidence: 0.80
+
+chapter_patterns:
+  # 中文章节
+  chinese:
+    - pattern: '^\s*第\s*([一二三四五六七八九十\d]+)\s*章\s*[.\s]*([^\n]{1,100})'
+      level: 1
+      confidence: 0.95
+    - pattern: '^\s*第\s*([一二三四五六七八九十]+)\s*节\s*([^\n]{1,100})'
+      level: 2
+      confidence: 0.90
+  
+  # 英文章节
+  english:
+    - pattern: '^\s*Chapter\s+(\d+)[.\s]+([^\n]{1,100})'
+      level: 1
+      confidence: 0.95
+    - pattern: '^\s*Section\s+(\d+)[.\s]+([^\n]{1,100})'
+      level: 2
+      confidence: 0.90
+  
+  # 编号章节
+  numbered:
+    - pattern: '^\s*(\d+)\s*\.\s*([A-Z][^\n]{1,100})'
+      level: 1
+      confidence: 0.85
+    - pattern: '^\s*(\d+\.\d+)\s+([^\n]{1,100})'
+      level: 2
+      confidence: 0.85
+    - pattern: '^\s*(\d+\.\d+\.\d+)\s+([^\n]{1,100})'
+      level: 3
+      confidence: 0.80
+
+# 过滤规则
+filters:
+  # 排除的标题关键词（不提取）
+  exclude_patterns:
+    - '目录'
+    - 'contents'
+    - '参考文献'
+    - 'references'
+    - '索引'
+    - 'index'
+  
+  # 必须包含的关键词（可选）
+  include_keywords: []
