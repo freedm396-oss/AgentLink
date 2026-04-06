@@ -47,18 +47,21 @@ class StockDataFetcher:
     def get_limit_up_stocks(self, date: Optional[str] = None) -> pd.DataFrame:
         """获取涨停股票列表"""
         try:
-            # 涨停数据目前只有akshare支持
-            if self.data_adapter.source == "akshare":
+            # 涨停数据目前只有akshare支持，尝试直接使用akshare
+            try:
                 import akshare as ak
+                print(f"{Fore.CYAN}📊 正在尝试连接akshare获取涨停数据...{Style.RESET_ALL}")
                 date = date or datetime.now().strftime("%Y%m%d")
                 df = ak.stock_zt_pool_em(date=date)
+                print(f"{Fore.GREEN}✅ 成功获取涨停数据，共{len(df)}只股票{Style.RESET_ALL}")
                 return df
-            else:
-                # 其他数据源不支持涨停数据，提示用户安装akshare
-                print(f"{Fore.YELLOW}⚠️ 当前数据源 {self.data_adapter.source} 不支持涨停数据获取{Style.RESET_ALL}")
-                print(f"{Fore.YELLOW}   涨停数据需要 akshare 数据源{Style.RESET_ALL}")
+            except ImportError:
+                print(f"{Fore.YELLOW}⚠️ 未安装akshare，无法获取涨停数据{Style.RESET_ALL}")
                 print(f"{Fore.CYAN}   请安装: pip install akshare{Style.RESET_ALL}")
-                print(f"{Fore.CYAN}   或使用: python skills/limit_up/scripts/analyzer.py --source akshare --all{Style.RESET_ALL}")
+                return pd.DataFrame()
+            except Exception as e:
+                print(f"{Fore.YELLOW}⚠️ akshare连接失败: {e}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}   当前环境可能无法连接akshare服务器{Style.RESET_ALL}")
                 return pd.DataFrame()
         except Exception as e:
             print(f"{Fore.RED}❌ 获取涨停数据失败: {e}{Style.RESET_ALL}")

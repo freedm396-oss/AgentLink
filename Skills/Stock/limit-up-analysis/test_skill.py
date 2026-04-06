@@ -46,7 +46,7 @@ try:
         config = yaml.safe_load(f)
     
     weights = config['weights']
-    total_weight = sum(w['weight'] for w in weights.values())
+    total_weight = sum(weights.values()) * 100
     print(f'   评分权重总和: {total_weight}% (应为100%)')
     if total_weight == 100:
         print('   ✅ 权重配置正确')

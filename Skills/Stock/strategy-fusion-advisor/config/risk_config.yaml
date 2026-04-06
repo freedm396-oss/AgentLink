@@ -1,0 +1,46 @@
+# config/risk_config.yaml
+
+# 风险管理配置
+risk_management:
+  # 个股风险
+  single_stock:
+    max_position: 0.30
+    min_position: 0.10
+    concentration_warning: 0.25
+  
+  # 行业风险
+  industry:
+    max_single_industry: 0.40
+    max_correlation: 0.70
+  
+  # 策略风险
+  strategy:
+    max_single_strategy_exposure: 0.50
+    min_strategies_contributing: 3
+  
+  # 组合风险目标
+  portfolio_risk:
+    target_volatility: 0.15
+    max_var_95: 0.05
+    max_expected_loss: 0.08
+
+# 风控规则
+risk_rules:
+  # 禁止买入条件
+  forbidden_conditions:
+    - "st股票"
+    - "上市不足60天"
+    - "停牌股票"
+    - "当日涨停无法买入"
+  
+  # 预警条件
+  warning_conditions:
+    - "单策略推荐数量>3只"
+    - "同行业股票>2只"
+    - "单股票得分>90"
+  
+  # 仓位调整规则
+  position_adjustment:
+    high_confidence: 1.0      # 评分>80
+    medium_confidence: 0.7    # 评分70-80
+    low_confidence: 0.4       # 评分60-70

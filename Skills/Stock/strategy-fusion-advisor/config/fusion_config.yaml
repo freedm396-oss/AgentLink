@@ -1,0 +1,108 @@
+# config/fusion_config.yaml
+
+# 策略融合配置
+fusion:
+  name: "策略融合投资顾问"
+  version: "v1.0.0"
+  
+  # 策略列表及权重 - 11个策略
+  strategies:
+    - name: "ma-bullish-strategy"
+      display_name: "均线多头排列"
+      win_rate: 0.65           # 历史胜率
+      weight: 1.0              # 融合权重系数
+      enabled: true
+      color: "#45B7D1"
+    
+    - name: "limit-up-analysis"
+      display_name: "涨停板连板分析"
+      win_rate: 0.65
+      weight: 1.0
+      enabled: true
+      color: "#FF6B6B"
+    
+    - name: "earnings-surprise-strategy"
+      display_name: "财报超预期"
+      win_rate: 0.70
+      weight: 1.2              # 基本面策略权重更高
+      enabled: true
+      color: "#4ECDC4"
+    
+    - name: "volume-retrace-ma-strategy"
+      display_name: "缩量回踩均线"
+      win_rate: 0.62
+      weight: 0.9
+      enabled: true
+      color: "#96CEB4"
+    
+    - name: "limit-up-retrace-strategy"
+      display_name: "涨停首次回调"
+      win_rate: 0.60
+      weight: 0.9
+      enabled: true
+      color: "#FFEAA7"
+    
+    - name: "macd-divergence-strategy"
+      display_name: "MACD底背离"
+      win_rate: 0.58
+      weight: 0.8
+      enabled: true
+      color: "#DDA0DD"
+    
+    - name: "morning-star-strategy"
+      display_name: "早晨之星"
+      win_rate: 0.58
+      weight: 0.8
+      enabled: true
+      color: "#F7DC6F"
+    
+    - name: "breakout-high-strategy"
+      display_name: "突破高点"
+      win_rate: 0.60
+      weight: 0.9
+      enabled: true
+      color: "#98D8C8"
+    
+    - name: "rsi-oversold-strategy"
+      display_name: "RSI超卖"
+      win_rate: 0.58
+      weight: 0.8
+      enabled: true
+      color: "#BB8FCE"
+    
+    - name: "volume-extreme-strategy"
+      display_name: "地量见底"
+      win_rate: 0.62
+      weight: 0.8
+      enabled: true
+      color: "#85C1E9"
+    
+    - name: "gap-fill-strategy"
+      display_name: "缺口回补"
+      win_rate: 0.62
+      weight: 0.8
+      enabled: true
+      color: "#F8B500"
+  
+  # 推荐数量
+  recommendations:
+    per_strategy: 5           # 每个策略推荐数量
+    final_top_n: 5            # 最终推荐数量
+  
+  # 评分参数
+  scoring:
+    strategy_score_weight: 0.6   # 策略内评分权重
+    win_rate_weight: 0.4         # 历史胜率权重
+    min_combined_score: 30       # 最低综合得分阈值
+  
+  # 仓位配置
+  portfolio:
+    max_single_position: 0.30    # 单只股票最大仓位
+    min_single_position: 0.10    # 单只股票最小仓位
+    cash_reserve: 0.10           # 现金预留比例
+
+# 数据存储
+data_storage:
+  recommendations: "./data/recommendations/"
+  historical: "./data/historical/"
+  logs: "./data/logs/"

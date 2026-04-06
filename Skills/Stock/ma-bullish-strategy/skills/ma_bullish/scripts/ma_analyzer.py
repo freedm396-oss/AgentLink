@@ -520,7 +520,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='均线多头排列策略分析')
-    parser.add_argument('--scan', action='store_true', help='扫描全市场')
+    parser.add_argument('--scan', action='store_true', help='扫描全市场（分析所有股票，较慢）')
     parser.add_argument('--stock', type=str, help='股票代码')
     parser.add_argument('--name', type=str, help='股票名称')
     parser.add_argument('--top', type=int, default=20, help='返回前N名')
@@ -530,6 +530,7 @@ def main():
     parser.add_argument('--date', type=str, help='分析日期 (格式: YYYY-MM-DD)，默认为最新数据')
     parser.add_argument('--sector', type=str, help='分析指定板块 (科技/医药/金融/消费/新能源/军工)')
     parser.add_argument('--all-sectors', action='store_true', help='分析所有板块')
+    parser.add_argument('--stocks', type=str, help='分析指定股票列表，逗号分隔，如: 000001,000002,600000')
     
     args = parser.parse_args()
     
@@ -593,6 +594,21 @@ def main():
         for sector_name, result in results.items():
             print(sector_analyzer.generate_sector_report(result))
             print("\n")
+    
+    elif args.stocks:
+        # 分析指定股票列表
+        try:
+            from skills.ma_bullish.scripts.sector_analyzer import SectorAnalyzer
+        except ImportError:
+            sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/ma-bullish-strategy')
+            from skills.ma_bullish.scripts.sector_analyzer import SectorAnalyzer
+        
+        stock_list = [s.strip() for s in args.stocks.split(',')]
+        print(f"分析指定股票列表: {stock_list}")
+        
+        sector_analyzer = SectorAnalyzer(analyzer)
+        result = sector_analyzer.analyze_stocks(stock_list, name="指定股票", analysis_date=args.date)
+        print(sector_analyzer.generate_sector_report(result))
     
     elif args.stock:
         result = analyzer.analyze_stock(args.stock, args.name or args.stock, analysis_date=args.date)

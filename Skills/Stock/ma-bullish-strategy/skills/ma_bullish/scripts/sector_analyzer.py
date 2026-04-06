@@ -11,7 +11,8 @@ from datetime import datetime
 class SectorAnalyzer:
     """板块分析器"""
     
-    # 预定义板块和成分股
+    # 预定义板块和代表性成分股（示例股票，用于快速分析）
+    # 注意：这只是全市场的一小部分代表性股票
     SECTORS = {
         '科技': ['000938', '000977', '002230', '002236', '002415', '300033', '300059', '600570', '600584', '603019'],
         '医药': ['000538', '000623', '000999', '002001', '002007', '300003', '300015', '600276', '600436', '603259'],
@@ -19,6 +20,12 @@ class SectorAnalyzer:
         '消费': ['000568', '000596', '000858', '002304', '600519', '600887', '601012', '601888', '603288', '603899'],
         '新能源': ['002074', '002129', '002202', '002594', '300014', '300124', '600438', '601012', '601727', '603806'],
         '军工': ['000768', '002013', '002179', '300034', '300114', '600038', '600150', '600372', '600893', '600967'],
+        '半导体': ['002049', '002156', '300046', '300223', '300661', '600360', '600584', '603005', '603501', '688008'],
+        '能源': ['000552', '000723', '002128', '600028', '600348', '600508', '600971', '601088', '601857', '601899'],
+        '电网': ['000400', '002028', '300001', '300274', '600406', '600452', '600487', '600885', '601179', '601669'],
+        '算力': ['000938', '000977', '002236', '300017', '300212', '300383', '600570', '600756', '603019', '688561'],
+        '存储': ['002049', '300223', '300661', '600667', '603501', '688008', '688018', '688123', '688256', '688525'],
+        '创新药': ['002422', '002653', '300003', '300142', '300558', '600196', '600276', '688180', '688266', '688331'],
     }
     
     def __init__(self, ma_analyzer):
@@ -29,6 +36,8 @@ class SectorAnalyzer:
             ma_analyzer: MABullishAnalyzer 实例
         """
         self.analyzer = ma_analyzer
+        print(f"⚠️ 注意：当前板块分析使用预定义的代表性股票（共{sum(len(stocks) for stocks in self.SECTORS.values())}只）")
+        print(f"   如需分析全市场，请使用 scan_all_stocks() 功能")
     
     def get_sector_stocks(self, sector_name: str) -> List[str]:
         """
@@ -70,10 +79,24 @@ class SectorAnalyzer:
                 'available_sectors': self.list_sectors()
             }
         
+        return self.analyze_stocks(stocks, sector_name, analysis_date)
+    
+    def analyze_stocks(self, stocks: List[str], name: str = "自定义", analysis_date: Optional[str] = None) -> Dict:
+        """
+        分析任意股票列表
+        
+        Args:
+            stocks: 股票代码列表
+            name: 分析组名称
+            analysis_date: 分析日期，格式 'YYYY-MM-DD'
+            
+        Returns:
+            分析结果
+        """
         candidates = []
         errors = []
         
-        print(f"分析 {sector_name} 板块 ({len(stocks)} 只股票)...")
+        print(f"分析 {name} ({len(stocks)} 只股票)...")
         
         for i, stock_code in enumerate(stocks, 1):
             print(f"  [{i}/{len(stocks)}] {stock_code}...", end=' ', flush=True)
@@ -92,7 +115,7 @@ class SectorAnalyzer:
         candidates.sort(key=lambda x: x['score'], reverse=True)
         
         return {
-            'sector': sector_name,
+            'sector': name,
             'analysis_date': analysis_date or datetime.now().strftime('%Y-%m-%d'),
             'total_stocks': len(stocks),
             'candidates': candidates,

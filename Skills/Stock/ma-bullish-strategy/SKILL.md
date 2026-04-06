@@ -100,6 +100,8 @@ results = sector_analyzer.analyze_all_sectors(analysis_date='2026-04-03')
 @ma-bullish-agent 分析医药板块在 2026-04-03
 ```
 
+⚠️ **注意**：板块分析使用预定义的代表性股票（每板块约10只），如需分析全市场请使用扫描功能。
+
 ## 评分维度
 
 | 维度 | 权重 | 说明 |
