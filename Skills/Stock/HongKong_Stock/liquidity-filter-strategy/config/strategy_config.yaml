@@ -1,0 +1,31 @@
+# 流动性过滤策略参数配置
+
+strategy:
+  name: "港股流动性过滤策略"
+  version: "1.0.0"
+  type: "risk_management"
+
+# 流动性参数（全部满足才允许交易）
+liquidity:
+  min_avg_volume_m_hkd: 20    # 日均成交额 > 2000万港元
+  min_volume_ma_days: 20       # 成交额计算周期：20日
+  min_turnover_rate: 0.005    # 换手率 > 0.5%
+  max_bid_ask_spread: 0.005   # 买卖价差 < 0.5%（日内估算阈值，实际价差远低于此）
+  min_market_cap_b_hkd: 50     # 市值 > 50亿港元
+
+# 仙股过滤
+penny_stock:
+  max_price: 1.0              # 股价 > 1港元
+  auto_reject: true            # 低于1港元自动拒绝
+
+# 警告级别
+warnings:
+  low_volume: 10              # 成交额 < 1000万警告
+  low_turnover: 0.003         # 换手率 < 0.3%警告
+  high_spread: 0.001          # 价差 > 0.1%警告
+
+# 适用场景
+scenarios:
+  - "作为所有策略的前置风控层"
+  - "单独扫描港股通标的流动性"
+  - "配合选股策略使用"

@@ -1,0 +1,39 @@
+# 流动性风控规则
+
+# 硬性拒绝规则（任一触发即拒绝）
+hard_reject:
+  price_below_1_hkd: true      # 股价 < 1港元自动拒绝
+  avg_volume_below_10m: true  # 日均成交额 < 1000万自动拒绝
+  spread_above_1pct: true      # 买卖价差 > 1%自动拒绝
+  market_cap_below_10b: true  # 市值 < 10亿自动拒绝
+
+# 警告规则（触发时打印警告但不拒绝）
+soft_warnings:
+  volume_below_20m: true       # 成交额 < 2000万警告
+  turnover_below_0.3pct: true # 换手率 < 0.3%警告
+  spread_above_0.2pct: true   # 价差 > 0.2%警告
+
+# 流动性不足时的仓位调整
+position_adjustment:
+  marginal_volume: 0.5         # 成交量边缘时，仓位打5折
+  marginal_turnover: 0.5       # 换手率边缘时，仓位打5折
+  marginal_spread: 0.8         # 价差边缘时，仓位打8折
+
+# 流动性监控
+monitoring:
+  intraday_volume_check: true   # 盘中实时监控成交量
+  volume_sudden_drop_alert: 0.5  # 成交量突降50%告警
+  trading_halt_check: true      # 检查是否停牌
+
+# 使用场景
+usage:
+  as_prerequisite: true         # 作为所有策略的前置条件
+  standalone_scan: true        # 可单独使用
+  combine_with_strategies: true # 可与任意策略叠加
+
+# 仙股特征检测
+penny_stock_signals:
+  price_below_0.1_hkd: true    # 股价 < 0.1港元
+  volume_below_1m: true       # 日成交 < 100万
+  market_cap_below_5b: true   # 市值 < 5亿
+  excessive_volatility: true   # 日波幅 > 20%

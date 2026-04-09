@@ -1,0 +1,26 @@
+# 港股配股砸盘抄底策略 - Agent 配置
+name: hk-placement-agent
+description: 港股配股砸盘抄底策略分析 Agent
+strategy: placement-dip-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../placement-dip-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 9 45 * * 1-5"    # 每周一到周五 9:45 开盘前扫描
+  - cron: "0 16 0 * * 1-5"    # 每周一到周五 16:00 盘后检查配股公告
+  - cron: "0 10 0 * * 6"      # 每周六 10:00 周末复盘
+
+actions:
+  - scan_placement_opportunities
+  - analyze_placement_positions
+  - placement_alerts

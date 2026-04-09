@@ -1,0 +1,26 @@
+# 港股策略优化器 - Agent 配置
+name: hk-strategy-optimizer-agent
+description: 港股策略优化器 Agent
+strategy: hk-strategy-optimizer
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../strategy-optimizer/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 22 0 * * 0"       # 每周日 22:00 每周策略优化
+  - cron: "0 23 1 * * *"        # 每月1日 23:00 月度综合优化
+  - cron: "0 20 0 * * *"        # 每日 20:00 策略健康检查
+
+actions:
+  - optimize_all_strategies
+  - analyze_strategy_performance
+  - generate_optimization_report

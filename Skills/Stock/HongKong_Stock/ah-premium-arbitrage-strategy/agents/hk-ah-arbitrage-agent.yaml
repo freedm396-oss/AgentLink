@@ -1,0 +1,26 @@
+# 港股AH溢价套利策略 - Agent 配置
+name: hk-ah-arbitrage-agent
+description: 港股AH溢价套利策略分析 Agent
+strategy: ah-premium-arbitrage-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../ah-premium-arbitrage-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 9 45 * * 1-5"    # 每周一到周五 9:45 开盘前扫描
+  - cron: "0 15 0 * * 1-5"    # 每周一到周五 15:00 盘后分析
+  - cron: "0 11 30 * * 6"     # 每周六 11:30 周末复盘
+
+actions:
+  - scan_ah_premium_opportunities
+  - analyze_ah_positions
+  - hedge_alerts

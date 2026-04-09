@@ -1,0 +1,26 @@
+# 港股财报超预期策略 - Agent 配置
+name: hk-earnings-surprise-agent
+description: 港股财报超预期策略分析 Agent
+strategy: earnings-surprise-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../earnings-surprise-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 10 0 * * 1-5"    # 每周一到周五 10:00 财报季扫描
+  - cron: "0 16 30 * * 1-5"   # 每周一到周五 16:30 盘后分析
+  - cron: "0 11 0 * * 6"      # 每周六 11:00 周末复盘
+
+actions:
+  - scan_earnings_surprise
+  - analyze_earnings_positions
+  - earnings_alerts

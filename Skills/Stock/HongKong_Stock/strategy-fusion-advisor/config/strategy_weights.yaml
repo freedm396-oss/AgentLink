@@ -1,0 +1,62 @@
+# 港股策略权重配置
+
+strategy_weights:
+  # 固定权重（基于历史胜率）
+  fixed_weights:
+    ma-bullish-strategy: 1.00
+    breakout-strategy: 0.90
+    short-interest-reversal-strategy: 1.10
+    ah-premium-arbitrage-strategy: 1.15
+    buyback-follow-strategy: 1.00
+    placement-dip-strategy: 0.90
+    dividend-exright-strategy: 1.00
+    liquidity-filter-strategy: 1.20
+    short-stop-loss-strategy: 1.20
+    earnings-surprise-strategy: 1.10
+
+  # 动态调整参数
+  dynamic_adjustment:
+    enabled: true
+    lookback_days: 30
+    adjustment_range: 0.2        # 调整范围±20%
+
+    # 近期表现奖励
+    recent_performance_bonus:
+      top_performer: 0.15
+      good_performer: 0.10
+      normal: 0.00
+      poor_performer: -0.10
+
+  # 市场环境调整
+  market_adjustment:
+    bull_market:
+      trend_strategies: 1.20     # 趋势策略加成
+      reversal_strategies: 0.80  # 反转策略减成
+
+    bear_market:
+      trend_strategies: 0.80
+      reversal_strategies: 1.20
+
+    range_market:
+      trend_strategies: 1.00
+      reversal_strategies: 1.00
+
+# 策略类型分类
+strategy_types:
+  trend_following:
+    - ma-bullish-strategy
+    - breakout-strategy
+    - ah-premium-arbitrage-strategy
+
+  reversal:
+    - short-interest-reversal-strategy
+    - placement-dip-strategy
+    - dividend-exright-strategy
+
+  fundamental:
+    - earnings-surprise-strategy
+    - buyback-follow-strategy
+
+  risk_management:
+    - liquidity-filter-strategy
+    - short-stop-loss-strategy

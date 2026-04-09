@@ -1,0 +1,56 @@
+# 做空止损风控规则
+
+# 止损执行优先级（从高到低）
+execution_priority:
+  1_hard_stop: true        # 硬止损（7%）最高优先
+  2_weekly_stop: true      # 周止损（10%）次之
+  3_daily_reduce: true     # 单日减仓（3%）第三
+  4_time_exit: true        # 到期强制平仓第四
+
+# 硬止损规则
+hard_stop:
+  trigger: 0.07              # -7% 无条件触发
+  execution: "market_order"  # 市价单
+  no_ exceptions: true        # 绝无例外
+
+# 单日减仓规则
+daily_reduce:
+  trigger: 0.03              # 单日 -3% 减半仓
+  reduce_pct: 0.50           # 卖出50%
+  reason: "降低单日风险敞口"
+
+# 周止损规则
+weekly_stop:
+  trigger: 0.10             # 周亏损 -10% 清仓
+  period: "weekly_friday"   # 以周五收盘为准
+  reason: "周亏损过大需全面撤退"
+
+# 持仓期限规则
+time_exit:
+  max_days: 20             # 最多20个交易日
+  friday_exit: true        # 到期优先周五出
+  reason: "防止无限期持仓"
+
+# 冷却期规则
+cooling_period:
+  enabled: true
+  duration_days: 3         # 3个交易日
+  applies_to: "all_stocks"  # 适用于所有持仓
+  reason: "止损后需冷静期，禁止报复性交易"
+
+# 止损后管理
+post_stop_loss:
+  review_within_24h: true    # 24小时内复盘
+  log_all_stops: true         # 记录所有止损
+  analyze_stop_reasons: true  # 分析止损原因
+
+# 黑名单规则
+blacklist:
+  after_3_stops_30days: true  # 30日内触发3次止损的标的入观察名单
+  strict_review_required: true  # 需严格审核才能重新开仓
+
+# 执行规则
+execution:
+  force_market_order: true  # 止损单必须市价
+  allow_partial: true         # 允许分批
+  no_limit_orders: true      # 禁止用限价单"等反弹"

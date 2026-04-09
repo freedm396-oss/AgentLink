@@ -1,0 +1,41 @@
+# 突破高点策略参数配置
+
+strategy:
+  name: "港股突破高点策略"
+  version: "1.0.0"
+
+# 突破参数
+breakout:
+  lookback_high_days: 60        # 往前看60日最高价
+  volume_ma_days: 50           # 成交量均量周期
+  volume_multiplier: 2.0       # 突破时量能需 > 均量 × 2
+
+# RSI参数
+rsi:
+  period: 14
+  lower_bound: 50             # RSI下限，不过冷
+  upper_bound: 75             # RSI上限，不过热
+
+# 回踩测试
+pullback:
+  max_days: 3                 # 3日内低点需测试前高
+  allowed_deviation: 0.02     # 允许2%偏差
+
+# 买入条件
+entry:
+  price_condition: "close > highest_high_60d"   # 收盘价 > 60日最高
+  volume_condition: "volume > ma50_volume * 2"   # 量能放大2倍
+  pullback_condition: "low > previous_high"       # 回踩不破前高
+  rsi_condition: "50 < RSI(14) < 75"              # RSI过滤
+
+# 止损止盈
+risk:
+  stop_loss_pct: 0.05          # 止损 -5%
+  take_profit_pct: 0.12        # 止盈 +12%
+  volume_shrink_threshold: 0.70  # 量能萎缩30%触发止盈
+
+# 过滤条件
+filters:
+  min_daily_volume: 50000000  # 最低日成交额 5000万港元
+  min_price: 1.0              # 最低股价 1港元
+  market: "港股通"            # 适用市场

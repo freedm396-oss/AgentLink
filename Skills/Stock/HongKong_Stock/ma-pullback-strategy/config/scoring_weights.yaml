@@ -1,0 +1,38 @@
+# config/scoring_weights.yaml
+
+# 港股缩量回踩均线策略评分权重配置
+version: "1.0.0"
+
+weights:
+  trend: 0.35
+  pullback: 0.30
+  volume: 0.25
+  liquidity: 0.10
+
+# 趋势评分标准（港股）
+trend:
+  perfect: 100      # 20日线斜率>0.5，股价在60日线上方
+  strong: 85        # 20日线斜率>0.2，股价在60日线上方
+  normal: 70        # 20日线斜率>0
+  poor: 0           # 20日线斜率<0
+
+# 回踩评分标准
+pullback:
+  perfect: 100      # 精确回踩20日线，偏离<0.5%
+  good: 85          # 偏离0.5-1%
+  normal: 70        # 偏离1-2%
+  poor: 0           # 偏离>2%
+
+# 缩量评分标准（港股）
+volume:
+  extreme: 100      # 缩量<40%
+  strong: 85        # 缩量40-50%
+  normal: 70        # 缩量50-60%
+  none: 0           # 未缩量
+
+# 流动性评分标准（港股特化）
+liquidity:
+  perfect: 100      # 成交额>1亿，市值>500亿
+  good: 85          # 成交额>5000万，市值>200亿
+  normal: 70        # 成交额>2000万，市值>100亿
+  poor: 0           # 流动性不足

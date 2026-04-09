@@ -1,0 +1,34 @@
+# 均线多头排列策略参数配置
+
+strategy:
+  name: "港股均线多头排列策略"
+  version: "1.0.0"
+
+# 均线参数
+ma:
+  periods: [5, 10, 20, 60]
+  unit: "days"
+
+# 买入条件
+entry:
+  ma_arrangement: "MA5 > MA10 > MA20 > MA60"
+  ma_spread_threshold: 0.05        # (MA5-MA60)/MA60 > 5%
+  southbound_holding_min: 0.05      # 港股通持股 > 5%
+  volume_ma5_above_ma20: true       # MA5(量) > MA20(量)
+
+# 止损止盈
+risk:
+  stop_loss_pct: 0.06               # 止损 -6%
+  take_profit_pct: 0.20             # 止盈 +20%
+  trailing_stop_trigger: "MA5 < MA10"  # 移动止盈触发条件
+
+# 过滤条件
+filters:
+  min_daily_volume: 50000000        # 最低日成交额 5000万港元
+  min_price: 1.0                    # 最低股价 1港元
+  market: "港股通"                   # 适用市场
+
+# 持仓管理
+position:
+  max_holding_days: 30              # 最大持仓天数
+  time_stop_profit_pct: 0.02        # 时间止损：15天盈利<2%

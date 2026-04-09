@@ -1,0 +1,20 @@
+# 港股AH溢价套利策略 - 定时任务配置
+
+crons:
+  # 每日开盘前扫描
+  - name: "开盘前AH溢价扫描"
+    schedule: "0 9 45 * * 1-5"    # 每周一到周五 9:45
+    action: scan_ah_premium_opportunities
+    description: 开盘前扫描AH溢价 > 40% 的机会
+
+  # 盘后持仓分析
+  - name: "盘后AH溢价分析"
+    schedule: "0 15 0 * * 1-5"    # 每周一到周五 15:00
+    action: analyze_ah_positions
+    description: 盘后分析持仓溢价收敛情况
+
+  # 周末策略复盘
+  - name: "周末AH溢价复盘"
+    schedule: "0 11 30 * * 6"     # 每周六 11:30
+    action: weekend_ah_review
+    description: 复盘本周AH溢价套利策略表现

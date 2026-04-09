@@ -1,0 +1,49 @@
+# 风险控制规则
+
+# 止损规则
+stop_loss:
+  h_stock_pct: 0.08           # H股止损 -8%
+  a_hedge_pct: 0.05           # A股对冲止损 -5%
+  no_hedge_stop: 0.10         # 无对冲时止损 -10%
+
+# 止盈规则
+take_profit:
+  premium_exit: 0.20          # AH溢价 < 20% 止盈
+  max_holding_days: 30         # 30日强制平仓
+  trailing_profit: true        # 启用移动止盈
+  trailing_keep_pct: 0.50      # 保留涨幅50%
+
+# 对冲规则
+hedge:
+  method: "short_a_stock"     # 做空A股（等市值）
+  ratio: 1.0                  # 1:1对冲
+  adjust_frequency: "weekly"  # 每周调整对冲比例
+  cost_note: "注意A股做空成本和流动性"
+
+# 时间止损
+time_stop:
+  enabled: true
+  check_days: 5               # 每5日检查一次
+  if_premium_not_shrink:
+    action: "reduce_position" # 溢价未收敛减仓
+
+# 市场环境过滤
+market_filter:
+  avoid_high_volatility: true  # 避开市场高波动期
+  hsi_filter: true              # 恒指需站上20日均线
+  csi300_filter: true           # 沪深300需站上20日均线
+
+# 个股过滤
+stock_filter:
+  min_h_volume_m: 10          # H股日成交 > 1000万港元
+  min_a_volume_m: 50         # A股日成交 > 5000万人民币
+  min_h_price: 1.0            # H股股价 > 1港元
+  min_a_price: 1.0            # A股股价 > 1元
+  exclude_st: true            # 排除ST股
+
+# 仓位管理
+position_size:
+  default_pct: 0.10          # 单只仓位 10%
+  max_total_pct: 0.40        # 总仓位 ≤ 40%（套利控仓）
+  max_positions: 4            # 同时持仓最多4只
+  hedge_ratio: 1.0            # 对冲比例 100%

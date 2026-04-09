@@ -1,0 +1,26 @@
+# 港股沽空比率反转策略 - Agent 配置
+name: hk-short-reversal-agent
+description: 港股沽空比率反转策略分析 Agent
+strategy: short-interest-reversal-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../short-interest-reversal-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 10 0 * * 1-5"    # 每周一到周五 10:00 盘前分析
+  - cron: "0 16 30 * * 1-5"   # 每周一到周五 16:30 盘后持仓检查
+  - cron: "0 11 0 * * 6"      # 每周六 11:00 周末复盘
+
+actions:
+  - scan_short_reversal_opportunities
+  - analyze_positions
+  - short_data_alerts

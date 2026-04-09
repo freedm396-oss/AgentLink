@@ -1,0 +1,26 @@
+# 港股突破高点策略 - Agent 配置
+name: hk-breakout-agent
+description: 港股突破高点策略分析 Agent
+strategy: breakout-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../breakout-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 9 30 * * 1-5"    # 每周一到周五 9:30 开盘前扫描
+  - cron: "0 14 30 * * 1-5"   # 每周一到周五 14:30 盘后分析
+  - cron: "0 10 0 * * 6"      # 每周六 10:00 周末复盘
+
+actions:
+  - scan_breakout_opportunities
+  - analyze_positions
+  - volume_alerts

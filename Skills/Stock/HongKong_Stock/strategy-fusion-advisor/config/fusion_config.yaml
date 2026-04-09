@@ -1,0 +1,101 @@
+# 港股策略融合配置
+fusion:
+  name: "港股策略融合投资顾问"
+  version: "v1.0.0"
+
+  # 策略列表及权重 - 10个港股策略
+  strategies:
+    - name: "ma-bullish-strategy"
+      display_name: "均线多头排列"
+      win_rate: 0.65
+      weight: 1.00
+      enabled: true
+      color: "#45B7D1"
+
+    - name: "breakout-strategy"
+      display_name: "突破高点策略"
+      win_rate: 0.58
+      weight: 0.90
+      enabled: true
+      color: "#FF6B6B"
+
+    - name: "short-interest-reversal-strategy"
+      display_name: "沽空比率反转"
+      win_rate: 0.70
+      weight: 1.10
+      enabled: true
+      color: "#4ECDC4"
+
+    - name: "ah-premium-arbitrage-strategy"
+      display_name: "AH溢价套利"
+      win_rate: 0.74
+      weight: 1.15
+      enabled: true
+      color: "#96CEB4"
+
+    - name: "buyback-follow-strategy"
+      display_name: "回购公告跟进"
+      win_rate: 0.62
+      weight: 1.00
+      enabled: true
+      color: "#FFEAA7"
+
+    - name: "placement-dip-strategy"
+      display_name: "配股砸盘抄底"
+      win_rate: 0.60
+      weight: 0.90
+      enabled: true
+      color: "#DDA0DD"
+
+    - name: "dividend-exright-strategy"
+      display_name: "分红除权博弈"
+      win_rate: 0.67
+      weight: 1.00
+      enabled: true
+      color: "#F7DC6F"
+
+    - name: "liquidity-filter-strategy"
+      display_name: "流动性过滤"
+      win_rate: 0.80  # 风控层，不参与胜率计算，仅作过滤
+      weight: 1.20
+      enabled: true
+      color: "#85C1E9"
+      is_risk_management: true
+
+    - name: "short-stop-loss-strategy"
+      display_name: "做空止损"
+      win_rate: 0.75  # 风控层，不参与胜率计算，仅作风控
+      weight: 1.20
+      enabled: true
+      color: "#BB8FCE"
+      is_risk_management: true
+
+    - name: "earnings-surprise-strategy"
+      display_name: "财报超预期"
+      win_rate: 0.70
+      weight: 1.10
+      enabled: true
+      color: "#F8B500"
+
+  # 推荐数量
+  recommendations:
+    per_strategy: 5           # 每个策略推荐数量
+    final_top_n: 5            # 最终推荐数量
+
+  # 评分参数
+  scoring:
+    strategy_score_weight: 0.6   # 策略内评分权重
+    win_rate_weight: 0.4         # 历史胜率权重
+    min_combined_score: 30       # 最低综合得分阈值
+
+  # 仓位配置
+  portfolio:
+    max_single_position: 0.30    # 单只股票最大仓位 30%
+    min_single_position: 0.10    # 单只股票最小仓位 10%
+    cash_reserve: 0.10           # 现金预留比例 10%
+
+# 数据存储
+data_storage:
+  recommendations: "./data/recommendations/"
+  historical: "./data/historical/"
+  logs: "./data/logs/"

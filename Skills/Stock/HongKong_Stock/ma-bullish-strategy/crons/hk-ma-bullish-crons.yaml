@@ -1,0 +1,20 @@
+# 港股均线多头排列策略 - 定时任务配置
+
+crons:
+  # 每日盘后扫描
+  - name: "盘后均线多头扫描"
+    schedule: "0 16 30 * * 1-5"   # 每周一到周五 16:30
+    action: scan_bullish_stocks
+    description: 盘后扫描均线多头排列的港股通标的
+
+  # 持仓每日检查
+  - name: "持仓每日检查"
+    schedule: "0 9 35 * * 1-5"    # 每周一到周五 9:35
+    action: check_positions
+    description: 检查持仓股均线排列是否破坏
+
+  # 周末策略复盘
+  - name: "周末策略复盘"
+    schedule: "0 10 0 * * 6"       # 每周六 10:00
+    action: weekend_review
+    description: 周末复盘本周策略表现

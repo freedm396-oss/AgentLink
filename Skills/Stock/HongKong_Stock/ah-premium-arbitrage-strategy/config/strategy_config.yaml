@@ -1,0 +1,47 @@
+# AH溢价套利策略参数配置
+
+strategy:
+  name: "港股AH溢价套利策略"
+  version: "1.0.0"
+
+# AH溢价参数
+ah_premium:
+  entry_threshold: 0.40      # 入场阈值：溢价 > 40%
+  exit_threshold: 0.20       # 止盈阈值：溢价 < 20%
+  max_premium: 1.50         # 最高溢价容忍（过高可能不收敛）
+
+# 量能参数
+volume:
+  h_min_million_hkd: 10     # H股最低成交量 1000万港元
+  a_min_million_cny: 50     # A股最低成交量 5000万人民币
+
+# 持仓参数
+holding:
+  max_days: 30              # 最大持仓30日
+  check_interval_days: 5   # 每5日检查一次溢价收敛
+
+# 行业趋势参数
+sector:
+  ma_days: 20               # 行业指数均线周期
+  compare_with: "ma20"      # 行业指数 > MA20
+
+# 汇率参数
+fx:
+  pair: "HKD/CNY"          # 汇率换算
+  assumed_rate: 0.92        # 假设汇率 1港元 ≈ 0.92人民币
+
+# 止损止盈
+risk:
+  h_stop_loss_pct: 0.08     # H股止损 -8%
+  a_stop_loss_pct: 0.05     # A股对冲止损 -5%
+
+# 对冲参数
+hedge:
+  method: "short_a_stock"  # 做空A股对冲
+  ratio: 1.0                # 1:1对冲（等市值）
+
+# 过滤条件
+filters:
+  min_h_price: 1.0          # H股最低股价 1港元
+  min_a_price: 1.0          # A股最低股价 1元
+  market: "A+H股"           # 适用市场

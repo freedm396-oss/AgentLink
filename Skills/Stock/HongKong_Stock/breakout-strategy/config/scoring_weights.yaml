@@ -1,0 +1,44 @@
+# 评分体系权重配置
+
+weights:
+  break_confirm: 0.30      # 突破确认权重 30%
+  volume_confirm: 0.30      # 量能确认权重 30%
+  pullback_test: 0.25      # 回踩测试权重 25%
+  rsi_filter: 0.15         # RSI过滤权重 15%
+
+# 各维度评分细则
+scoring:
+  # 突破确认评分 (满分 100)
+  break_confirm:
+    strong: 100              # 收盘价 > 60日最高 × 1.03（超过3%以上）
+    good: 80                 # 收盘价 > 60日最高（刚突破）
+    weak: 50                 # 接近60日最高（偏差<2%）
+    false: 0                 # 未突破
+
+  # 量能确认评分 (满分 100)
+  volume_confirm:
+    explosive: 100           # 量能 > 均量 × 3
+    strong: 80                # 量能 > 均量 × 2
+    moderate: 50              # 量能 > 均量 × 1.5
+    weak: 20                  # 量能不足均量2倍
+
+  # 回踩测试评分 (满分 100)
+  pullback_test:
+    passed: 100              # 完全回踩确认
+    partial: 60               # 部分回踩（低点心破前高<1%）
+    not_tested: 80            # 尚未回踩（直接突破）
+    failed: 0                 # 回踩跌破前高
+
+  # RSI过滤评分 (满分 100)
+  rsi_filter:
+    ideal: 100              # RSI 在 55-65（最佳区间）
+    good: 80                  # RSI 在 50-75
+    neutral: 50               # RSI 在 45-50 或 75-80
+    dangerous: 20            # RSI > 80 或 < 45
+
+# 综合评分等级
+rating:
+  very_strong: 85            # ≥85 极强
+  strong: 75                  # 75-84 强
+  medium: 70                  # 70-74 中等
+  weak: 0                    # <70 弱

@@ -1,0 +1,20 @@
+# 港股财报超预期策略 - 定时任务配置
+
+crons:
+  # 每日财报扫描
+  - name: "盘前财报扫描"
+    schedule: "0 10 0 * * 1-5"    # 每周一到周五 10:00
+    action: scan_earnings_surprise
+    description: 扫描近期发布业绩公告的港股
+
+  # 盘后持仓检查
+  - name: "盘后持仓检查"
+    schedule: "0 16 30 * * 1-5"   # 每周一到周五 16:30
+    action: check_earnings_positions
+    description: 检查财报持仓表现及止损条件
+
+  # 周末策略复盘
+  - name: "周末财报策略复盘"
+    schedule: "0 11 0 * * 6"      # 每周六 11:00
+    action: weekend_earnings_review
+    description: 复盘本周财报超预期策略表现

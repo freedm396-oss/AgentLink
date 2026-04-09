@@ -1,0 +1,26 @@
+# 港股做空止损策略 - Agent 配置
+name: hk-stop-loss-agent
+description: 港股做空止损策略 Agent（风控核心）
+strategy: short-stop-loss-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../short-stop-loss-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 9 10 * * 1-5"    # 每周一到周五 9:10 开盘前风控检查
+  - cron: "0 14 50 * * 1-5"   # 每周一到周五 14:50 盘后风控检查
+  - cron: "0 10 0 * * 6"      # 每周六 10:00 周末风控复盘
+
+actions:
+  - check_all_positions_stop_loss
+  - execute_stop_loss_if_needed
+  - manage_cooling_period

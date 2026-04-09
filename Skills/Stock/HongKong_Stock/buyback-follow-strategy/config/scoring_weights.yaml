@@ -1,0 +1,46 @@
+# 评分体系权重配置
+
+weights:
+  discount_depth: 0.30     # 偏离度权重 30%
+  buyback_scale: 0.25     # 回购规模权重 25%
+  historical_compliance: 0.25  # 历史合规权重 25%
+  timing: 0.20            # 时效性权重 20%
+
+# 各维度评分细则
+scoring:
+  # 价格偏离度评分 (满分 100)
+  discount_depth:
+    extreme: 100            # 偏离 > 15%（极度低估）
+    high: 80               # 偏离 10-15%
+    good: 70                # 偏离 5-10%（入场区间）
+    moderate: 50             # 偏离 3-5%
+    weak: 20                # 偏离 < 3%
+
+  # 回购规模评分 (满分 100)
+  buyback_scale:
+    large: 100              # 规模 > 0.5%
+    medium: 80              # 规模 0.2-0.5%
+    small: 60               # 规模 0.1-0.2%
+    tiny: 30                # 规模 < 0.1%
+
+  # 历史合规评分 (满分 100)
+  historical_compliance:
+    excellent: 100           # 2年内 > 5次回购
+    good: 80                # 2年内 3-5次回购
+    moderate: 60             # 2年内 2次回购
+    poor: 30                # 2年内 1次回购
+    none: 0                 # 无历史记录
+
+  # 时效性评分 (满分 100)
+  timing:
+    very_fresh: 100         # 3日内
+    fresh: 80               # 4-7日
+    aging: 50               # 8-14日
+    stale: 20                # > 14日
+
+# 综合评分等级
+rating:
+  very_strong: 85           # ≥85 极强
+  strong: 75                # 75-84 强
+  medium: 70                # 70-74 中等
+  weak: 0                   # <70 弱

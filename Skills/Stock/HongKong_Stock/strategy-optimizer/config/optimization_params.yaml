@@ -1,0 +1,336 @@
+# 港股各策略可优化参数范围
+strategies:
+  ma-bullish-strategy:
+    parameters:
+      ma_spread_threshold:
+        type: "float"
+        range: [0.04, 0.05, 0.06, 0.07, 0.08]
+        default: 0.05
+      southbound_min:
+        type: "float"
+        range: [0.04, 0.05, 0.06, 0.08, 0.10]
+        default: 0.05
+      volume_ratio:
+        type: "float"
+        range: [1.0, 1.2, 1.3, 1.5]
+        default: 1.2
+      stop_loss_pct:
+        type: "float"
+        range: [0.05, 0.06, 0.07, 0.08]
+        default: 0.06
+      take_profit_pct:
+        type: "float"
+        range: [0.15, 0.18, 0.20, 0.22]
+        default: 0.20
+
+  breakout-strategy:
+    parameters:
+      lookback_high_days:
+        type: "int"
+        range: [40, 50, 60, 80]
+        default: 60
+      volume_multiplier:
+        type: "float"
+        range: [1.8, 2.0, 2.2, 2.5]
+        default: 2.0
+      rsi_lower:
+        type: "int"
+        range: [45, 50, 55]
+        default: 50
+      rsi_upper:
+        type: "int"
+        range: [70, 73, 75]
+        default: 75
+      stop_loss_pct:
+        type: "float"
+        range: [0.04, 0.05, 0.06]
+        default: 0.05
+      take_profit_pct:
+        type: "float"
+        range: [0.10, 0.12, 0.15]
+        default: 0.12
+
+  short-interest-reversal-strategy:
+    parameters:
+      high_threshold:
+        type: "float"
+        range: [0.22, 0.25, 0.28, 0.30]
+        default: 0.25
+      consecutive_high_days:
+        type: "int"
+        range: [2, 3, 4]
+        default: 3
+      reversal_down_days:
+        type: "int"
+        range: [1, 2, 3]
+        default: 2
+      min_market_cap_b:
+        type: "int"
+        range: [80, 100, 120]
+        default: 100
+      stop_loss_pct:
+        type: "float"
+        range: [0.06, 0.07, 0.08]
+        default: 0.07
+      take_profit_pct:
+        type: "float"
+        range: [0.15, 0.18, 0.20]
+        default: 0.18
+
+  ah-premium-arbitrage-strategy:
+    parameters:
+      entry_threshold:
+        type: "float"
+        range: [0.35, 0.40, 0.45, 0.50]
+        default: 0.40
+      exit_threshold:
+        type: "float"
+        range: [0.15, 0.18, 0.20, 0.22]
+        default: 0.20
+      h_min_volume_m:
+        type: "int"
+        range: [8, 10, 12, 15]
+        default: 10
+      a_min_volume_m:
+        type: "int"
+        range: [40, 50, 60]
+        default: 50
+      h_stop_loss_pct:
+        type: "float"
+        range: [0.07, 0.08, 0.10]
+        default: 0.08
+      max_days:
+        type: "int"
+        range: [25, 30, 35]
+        default: 30
+
+  buyback-follow-strategy:
+    parameters:
+      discount_threshold:
+        type: "float"
+        range: [0.04, 0.05, 0.06, 0.07]
+        default: 0.05
+      min_ratio_threshold:
+        type: "float"
+        range: [0.0008, 0.001, 0.0012, 0.0015]
+        default: 0.001
+      min_consecutive_years:
+        type: "int"
+        range: [3, 4, 5]
+        default: 5
+      announcement_window_days:
+        type: "int"
+        range: [5, 7, 10]
+        default: 7
+      stop_loss_pct:
+        type: "float"
+        range: [0.04, 0.05, 0.06]
+        default: 0.05
+      take_profit_pct:
+        type: "float"
+        range: [0.08, 0.10, 0.12]
+        default: 0.10
+
+  placement-dip-strategy:
+    parameters:
+      discount_min:
+        type: "float"
+        range: [0.05, 0.06, 0.08, 0.10]
+        default: 0.05
+      drop_min:
+        type: "float"
+        range: [0.06, 0.08, 0.10]
+        default: 0.08
+      drop_max:
+        type: "float"
+        range: [0.12, 0.15, 0.18]
+        default: 0.15
+      min_institutions:
+        type: "int"
+        range: [2, 3, 4]
+        default: 3
+      stop_loss_pct:
+        type: "float"
+        range: [0.05, 0.06, 0.07]
+        default: 0.06
+      take_profit_pct:
+        type: "float"
+        range: [0.10, 0.12, 0.15]
+        default: 0.12
+
+  dividend-exright-strategy:
+    parameters:
+      min_yield:
+        type: "float"
+        range: [0.04, 0.05, 0.06, 0.07]
+        default: 0.05
+      min_consecutive_years:
+        type: "int"
+        range: [4, 5, 6]
+        default: 5
+      exright_window_days:
+        type: "int"
+        range: [4, 5, 6, 7]
+        default: 5
+      stop_loss_pct:
+        type: "float"
+        range: [0.02, 0.03, 0.04]
+        default: 0.03
+      max_days:
+        type: "int"
+        range: [4, 5, 6]
+        default: 5
+
+  liquidity-filter-strategy:
+    parameters:
+      min_avg_volume_m:
+        type: "int"
+        range: [15, 20, 25, 30]
+        default: 20
+      min_turnover_rate:
+        type: "float"
+        range: [0.004, 0.005, 0.006, 0.008]
+        default: 0.005
+      max_spread:
+        type: "float"
+        range: [0.004, 0.005, 0.006]
+        default: 0.005
+      min_market_cap_b:
+        type: "int"
+        range: [40, 50, 60, 80]
+        default: 50
+
+  short-stop-loss-strategy:
+    parameters:
+      hard_stop_pct:
+        type: "float"
+        range: [0.06, 0.07, 0.08, 0.10]
+        default: 0.07
+      daily_loss_pct:
+        type: "float"
+        range: [0.025, 0.03, 0.035, 0.04]
+        default: 0.03
+      reduce_position_pct:
+        type: "float"
+        range: [0.40, 0.50, 0.60]
+        default: 0.50
+      weekly_loss_pct:
+        type: "float"
+        range: [0.08, 0.10, 0.12]
+        default: 0.10
+      max_days:
+        type: "int"
+        range: [18, 20, 22]
+        default: 20
+      cooling_days:
+        type: "int"
+        range: [2, 3, 4]
+        default: 3
+
+  earnings-surprise-strategy:
+    parameters:
+      min_net_profit_yoy:
+        type: "float"
+        range: [0.20, 0.25, 0.30, 0.35]
+        default: 0.30
+      min_revenue_yoy:
+        type: "float"
+        range: [0.15, 0.18, 0.20, 0.25]
+        default: 0.20
+      min_eps_surprise:
+        type: "float"
+        range: [0.08, 0.10, 0.12, 0.15]
+        default: 0.10
+      stop_loss_pct:
+        type: "float"
+        range: [0.06, 0.08, 0.10]
+        default: 0.08
+      take_profit_pct:
+        type: "float"
+        range: [0.15, 0.18, 0.20, 0.25]
+        default: 0.20
+      max_days:
+        type: "int"
+        range: [15, 20, 25]
+        default: 20
+
+  ma-pullback-strategy:
+    parameters:
+      ma_periods:
+        type: "int"
+        range: [10, 20, 30]
+        default: 20
+      pullback_depth:
+        type: "float"
+        range: [0.03, 0.05, 0.08]
+        default: 0.05
+      volume_ratio:
+        type: "float"
+        range: [0.4, 0.5, 0.6]
+        default: 0.5
+      stop_loss_pct:
+        type: "float"
+        range: [0.05, 0.06, 0.07]
+        default: 0.06
+
+# 评分权重优化
+scoring_weights:
+  strategies:
+    ma-bullish-strategy:
+      weights:
+        ma_arrangement:
+          range: [0.25, 0.30, 0.35]
+          default: 0.30
+        ma_spread:
+          range: [0.20, 0.25, 0.30]
+          default: 0.25
+        southbound:
+          range: [0.20, 0.25, 0.30]
+          default: 0.25
+        volume:
+          range: [0.15, 0.20, 0.25]
+          default: 0.20
+
+    breakout-strategy:
+      weights:
+        break_confirm:
+          range: [0.25, 0.30, 0.35]
+          default: 0.30
+        volume_confirm:
+          range: [0.25, 0.30, 0.35]
+          default: 0.30
+        pullback_test:
+          range: [0.20, 0.25, 0.30]
+          default: 0.25
+        rsi_filter:
+          range: [0.10, 0.15, 0.20]
+          default: 0.15
+
+    earnings-surprise-strategy:
+      weights:
+        surprise_score:
+          range: [0.25, 0.30, 0.35]
+          default: 0.30
+        growth_quality:
+          range: [0.20, 0.25, 0.30]
+          default: 0.25
+        market_reaction:
+          range: [0.20, 0.25, 0.30]
+          default: 0.25
+        risk_level:
+          range: [0.15, 0.20, 0.25]
+          default: 0.20
+
+# 阈值优化
+thresholds:
+  strategies:
+    ma-bullish-strategy:
+      very_strong:
+        range: [80, 85, 90]
+        default: 85
+      strong:
+        range: [70, 75, 80]
+        default: 75
+      medium:
+        range: [65, 70, 75]
+        default: 70

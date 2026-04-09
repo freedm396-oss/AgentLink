@@ -1,0 +1,71 @@
+# config/strategy_config.yaml
+
+# 港股缩量回踩均线策略参数配置
+strategy:
+  name: "港股缩量回踩均线策略"
+  version: "1.0.0"
+  market: "HK"
+  
+  # 均线参数
+  ma_parameters:
+    ma_period: 20             # 20日均线
+    ma_slope_period: 5        # 斜率计算周期
+    min_ma_slope: 0.01        # 最小斜率（上升趋势）
+  
+  # 回踩参数
+  pullback_parameters:
+    deviation_range: [-2, 2]  # 偏离20日线范围(%)
+    ideal_deviation: 0        # 理想偏离度
+    max_deviation: 2          # 最大偏离
+  
+  # 成交量参数（港股特化）
+  volume_parameters:
+    volume_ma_period: 20      # 成交量均线周期
+    shrink_ratio: 0.6         # 缩量比例（<60%）
+    extreme_shrink: 0.4       # 极度缩量（<40%）
+    min_avg_volume: 20000000  # 最小平均成交额(港元) 2000万
+  
+  # 流动性过滤（港股特化）
+  liquidity_filters:
+    min_price: 1.0            # 最小股价(港元)，避免仙股
+    min_market_cap: 100000000000  # 最小市值100亿港元
+    min_avg_turnover: 20000000    # 最小平均成交额2000万
+    exclude_penny_stocks: true    # 排除仙股
+  
+  # 趋势确认
+  trend_confirmation:
+    require_ma_slope_up: true
+    require_price_above_ma60: true  # 股价在60日线上方
+    lookback_days: 20
+
+# 评分权重
+scoring:
+  weights:
+    trend: 0.35               # 趋势权重
+    pullback: 0.30            # 回踩权重
+    volume: 0.25              # 缩量权重
+    liquidity: 0.10           # 流动性权重
+  
+  thresholds:
+    strong: 85
+    recommend: 75
+    watch: 70
+
+# 风险管理
+risk_management:
+  stop_loss:
+    type: "percentage"
+    percentage: 0.07          # 7%止损
+    ma_stop: "close < ma20"   # 跌破20日线止损
+  
+  take_profit:
+    target1: 0.08             # 第一目标8%
+    target2: 0.12             # 第二目标12%
+    target3: 0.15             # 第三目标15%
+  
+  position_sizing:
+    strong_signal: 0.20
+    normal_signal: 0.15
+    weak_signal: 0.10
+  
+  max_holding_days: 15

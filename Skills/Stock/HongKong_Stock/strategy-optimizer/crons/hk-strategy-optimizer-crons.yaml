@@ -1,0 +1,20 @@
+# 港股策略优化器 - 定时任务配置
+
+crons:
+  # 每周策略优化
+  - name: "每周策略优化"
+    schedule: "0 22 0 * * 0"       # 每周日 22:00
+    action: optimize_all_strategies
+    description: 对所有港股策略进行周度参数优化
+
+  # 月度综合优化
+  - name: "月度综合优化"
+    schedule: "0 23 1 * * *"       # 每月1日 23:00
+    action: monthly_comprehensive_optimization
+    description: 月度全面优化，包含权重和阈值调整
+
+  # 每日策略健康检查
+  - name: "每日策略健康检查"
+    schedule: "0 20 0 * * *"       # 每日 20:00
+    action: daily_strategy_health_check
+    description: 检查各策略近期表现，识别需要优化的策略

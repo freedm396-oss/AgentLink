@@ -1,0 +1,37 @@
+# 评分体系权重配置
+
+weights:
+  surprise_score: 0.30     # 超预期评分权重 30%
+  growth_quality: 0.25   # 增长质量权重 25%
+  market_reaction: 0.25  # 市场反应权重 25%
+  risk_level: 0.20       # 风险等级权重 20%
+
+# 各维度评分细则
+scoring:
+  # 超预期评分 (满分 100)
+  surprise_score:
+    extreme: 100             # 超预期 > 30%
+    high: 80                # 超预期 20-30%
+    good: 70                # 超预期 10-20%（入场区间）
+    poor: 40                # 超预期 < 10%
+
+  # 增长质量评分 (满分 100)
+  growth_quality:
+    excellent: 100           # 连续加速增长
+    good: 80                # 稳定增长
+    moderate: 60             # 增长放缓
+    poor: 30                # 负增长
+
+  # 市场反应评分 (满分 100)
+  market_reaction:
+    strong: 100              # 持续上涨未回落
+    good: 80                 # 部分回落但守住
+    weak: 50                 # 涨幅全部回吐
+    negative: 20             # 下跌
+
+# 综合评分等级
+rating:
+  very_strong: 85           # ≥85 极强
+  strong: 75                # 75-84 强
+  medium: 70                # 70-74 中等
+  weak: 0                   # <70 弱

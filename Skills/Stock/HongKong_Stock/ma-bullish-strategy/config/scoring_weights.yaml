@@ -1,0 +1,44 @@
+# 评分体系权重配置
+
+weights:
+  ma_arrangement: 0.30      # 均线排列权重 30%
+  ma_spread: 0.25           # 均线发散权重 25%
+  southbound_holding: 0.25   # 北水支撑权重 25%
+  volume_trend: 0.20        # 量价配合权重 20%
+
+# 各维度评分细则
+scoring:
+  # 均线排列评分 (满分 100)
+  ma_arrangement:
+    perfect: 100            # MA5>MA10>MA20>MA60 且间距均匀
+    good: 80                 # MA5>MA10>MA20>MA60 但间距不均
+    partial: 50             # 仅 MA5>MA10>MA20
+    weak: 20                 # 仅 MA5>MA10
+
+  # 均线发散评分 (满分 100)
+  ma_spread:
+    strong: 100              # 发散度 > 10%
+    moderate: 80              # 发散度 5-10%
+    weak: 50                  # 发散度 3-5%
+    very_weak: 20             # 发散度 < 3%
+
+  # 北水持股评分 (满分 100)
+  southbound:
+    strong: 100               # 持股 > 10%
+    moderate: 80               # 持股 5-10%
+    light: 50                  # 持股 3-5%
+    very_light: 20             # 持股 < 3%
+
+  # 量能评分 (满分 100)
+  volume:
+    ideal: 100                # 量能持续放大，MA5量>>MA20量
+    good: 80                   # MA5量>MA20量
+    neutral: 50                # 持平
+    weak: 20                   # MA5量<MA20量（量价背离）
+
+# 综合评分等级
+rating:
+  very_strong: 85             # ≥85 极强
+  strong: 75                  # 75-84 强
+  medium: 70                  # 70-74 中等
+  weak: 0                     # <70 弱

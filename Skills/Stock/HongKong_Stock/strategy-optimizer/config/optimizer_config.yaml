@@ -1,0 +1,83 @@
+# 港股策略优化器配置
+optimizer:
+  name: "港股策略优化器"
+  version: "v1.0.0"
+
+  # 优化目标
+  optimization_goals:
+    primary: "win_rate"        # 主要优化目标
+    secondary: "profit_loss_ratio"  # 次要优化目标
+    constraints:
+      max_drawdown: 0.20         # 最大回撤约束 20%
+      min_win_rate: 0.50        # 最小胜率约束 50%
+      min_trades: 20             # 最小交易次数
+
+  # 优化算法
+  algorithm:
+    type: "grid_search"          # 网格搜索
+    max_iterations: 200         # 最大迭代次数
+    cv_folds: 5                 # 交叉验证折数
+
+  # 港股策略列表
+  strategies:
+    - name: "ma-bullish-strategy"
+      path: "../ma-bullish-strategy"
+      enabled: true
+      description: "均线多头排列策略"
+
+    - name: "breakout-strategy"
+      path: "../breakout-strategy"
+      enabled: true
+      description: "突破高点策略"
+
+    - name: "short-interest-reversal-strategy"
+      path: "../short-interest-reversal-strategy"
+      enabled: true
+      description: "沽空比率反转策略"
+
+    - name: "ah-premium-arbitrage-strategy"
+      path: "../ah-premium-arbitrage-strategy"
+      enabled: true
+      description: "AH溢价套利策略"
+
+    - name: "buyback-follow-strategy"
+      path: "../buyback-follow-strategy"
+      enabled: true
+      description: "回购公告跟进策略"
+
+    - name: "placement-dip-strategy"
+      path: "../placement-dip-strategy"
+      enabled: true
+      description: "配股砸盘抄底策略"
+
+    - name: "dividend-exright-strategy"
+      path: "../dividend-exright-strategy"
+      enabled: true
+      description: "分红除权博弈策略"
+
+    - name: "liquidity-filter-strategy"
+      path: "../liquidity-filter-strategy"
+      enabled: true
+      description: "流动性过滤策略（风控层）"
+
+    - name: "short-stop-loss-strategy"
+      path: "../short-stop-loss-strategy"
+      enabled: true
+      description: "做空止损策略（风控层）"
+
+    - name: "earnings-surprise-strategy"
+      path: "../earnings-surprise-strategy"
+      enabled: true
+      description: "财报超预期策略"
+
+    - name: "ma-pullback-strategy"
+      path: "../ma-pullback-strategy"
+      enabled: false
+      description: "均线回踩策略"
+
+# 数据存储
+data_storage:
+  backtest_results: "./data/backtest_results/"
+  predictions: "./data/predictions/"
+  optimized_params: "./data/optimized_params/"
+  logs: "./data/logs/"

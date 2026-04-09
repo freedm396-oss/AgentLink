@@ -1,0 +1,20 @@
+# 港股突破高点策略 - 定时任务配置
+
+crons:
+  # 每日开盘前扫描
+  - name: "开盘前突破扫描"
+    schedule: "0 9 30 * * 1-5"    # 每周一到周五 9:30
+    action: scan_breakout_opportunities
+    description: 开盘前扫描可能突破的港股
+
+  # 盘后持仓检查
+  - name: "盘后持仓检查"
+    schedule: "0 16 0 * * 1-5"    # 每周一到周五 16:00
+    action: check_positions
+    description: 检查持仓是否触发止盈/止损
+
+  # 周末策略复盘
+  - name: "周末突破复盘"
+    schedule: "0 10 0 * * 6"      # 每周六 10:00
+    action: weekend_review
+    description: 复盘本周突破策略表现

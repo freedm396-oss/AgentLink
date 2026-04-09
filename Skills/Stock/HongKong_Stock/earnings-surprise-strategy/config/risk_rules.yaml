@@ -1,0 +1,38 @@
+# 港股财报超预期风险控制规则
+
+# 止损规则
+stop_loss:
+  hard_stop_pct: 0.08           # 硬止损 -8%
+  technical_stop: true            # 技术止损
+  earnings_low_stop: true         # 跌破公告日最低价止损
+
+# 止盈规则
+take_profit:
+  target_pct: 0.20              # 目标止盈 +20%
+  trailing_stop: true              # 启用移动止盈
+  trailing_keep_pct: 0.50        # 保留涨幅50%
+
+# 时间止损
+time_stop:
+  enabled: true
+  max_days: 20                 # 最大持仓20日
+  min_profit: 0.03             # 持仓10日盈利<3%离场
+
+# 市场环境过滤
+market_filter:
+  avoid_crash: true            # 大市单日跌超2%时不开新仓
+  volume_filter: true          # 大市成交额需正常
+
+# 个股过滤
+stock_filter:
+  min_market_cap_m: 1000   # 市值 > 100亿港元
+  min_price: 1.0              # 股价 > 1港元
+  exclude_st: true            # 排除ST股
+  require_profit: true         # 要求上年度盈利
+
+# 仓位管理
+position_size:
+  strong_signal_pct: 0.20    # 强信号仓位 20%
+  normal_signal_pct: 0.15    # 普通信号仓位 15%
+  max_total_pct: 0.50       # 总仓位 ≤ 50%
+  max_positions: 5           # 同时持仓最多5只

@@ -1,0 +1,26 @@
+# 港股流动性过滤策略 - Agent 配置
+name: hk-liquidity-agent
+description: 港股流动性过滤策略 Agent（风控门神）
+strategy: liquidity-filter-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../liquidity-filter-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 9 15 * * 1-5"    # 每周一到周五 9:15 全市场流动性扫描
+  - cron: "0 14 45 * * 1-5"   # 每周一到周五 14:45 盘后流动性复检
+  - cron: "0 10 0 * * 6"      # 每周六 10:00 周末流动性报告
+
+actions:
+  - scan_all_stocks_liquidity
+  - filter_poor_liquidity_stocks
+  - generate_liquidity_report

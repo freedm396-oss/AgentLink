@@ -1,0 +1,33 @@
+# 分红除权博弈策略参数配置
+
+strategy:
+  name: "港股分红除权博弈策略"
+  version: "1.0.0"
+
+# 分红参数
+dividend:
+  min_yield: 0.05            # 最低股息率：> 5%
+  min_consecutive_years: 5   # 最低连续分红年数
+  exright_window_days: 5      # 除权前窗口：≤ 5日
+
+# 预期收益
+entry:
+  entry_timing: "除权前5日内入场"
+
+# 止损止盈
+risk:
+  stop_loss_pct: 0.03       # 止损 -3%（3日无上涨）
+  take_profit_timing: "除权日开盘卖出"
+
+# 持仓参数
+holding:
+  max_days: 5               # 最大持仓5日（除权日必须出）
+  check_interval_days: 1       # 每日检查
+
+# 过滤条件
+filters:
+  min_market_cap: 10000    # 最低市值 100亿港元
+  min_daily_volume: 10000000  # 日成交额 > 1000万
+  exclude_st: true          # 排除ST股
+  market: "港股"           # 适用市场
+  avoid_market_crash: true   # 大市急跌时不开新仓

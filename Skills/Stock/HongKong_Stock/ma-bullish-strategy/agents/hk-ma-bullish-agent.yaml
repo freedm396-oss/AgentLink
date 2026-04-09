@@ -1,0 +1,25 @@
+# 港股均线多头排列策略 - Agent 配置
+name: hk-ma-bullish-agent
+description: 港股均线多头排列策略分析 Agent
+strategy: ma-bullish-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../ma-bullish-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 9 35 * * 1-5"   # 每周一到周五 9:35 检查持仓
+  - cron: "0 14 30 * * 1-5"  # 每周一到周五 14:30 盘后分析
+
+actions:
+  - analyze_positions        # 分析持仓
+  - scan_opportunities       # 扫描机会
+  - risk_alerts              # 风险预警

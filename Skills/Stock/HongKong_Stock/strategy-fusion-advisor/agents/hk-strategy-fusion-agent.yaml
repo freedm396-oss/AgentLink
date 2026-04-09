@@ -1,0 +1,26 @@
+# 港股策略融合投资顾问 - Agent 配置
+name: hk-strategy-fusion-agent
+description: 港股策略融合投资顾问 Agent
+strategy: hk-strategy-fusion-advisor
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../strategy-fusion-advisor/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 16 0 * * 1-5"    # 每周一到周五 16:00 盘后推荐
+  - cron: "0 9 15 * * 1-5"     # 每周一到周五 9:15 早盘确认
+  - cron: "0 16 30 * * 5"       # 每周五 16:30 周度回顾
+
+actions:
+  - generate_daily_fusion_recommendation
+  - analyze_portfolio
+  - generate_investment_report

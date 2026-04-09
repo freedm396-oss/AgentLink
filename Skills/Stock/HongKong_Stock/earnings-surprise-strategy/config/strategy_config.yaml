@@ -1,0 +1,35 @@
+# 港股财报超预期策略参数配置
+
+strategy:
+  name: "港股财报超预期策略"
+  version: "1.0.0"
+
+# 业绩增长标准
+growth_standards:
+  min_net_profit_yoy: 0.30      # 净利润同比增长最小值 30%
+  min_revenue_yoy: 0.20         # 营收同比增长最小值 20%
+  min_eps_surprise: 0.10       # EPS超预期最小值 10%
+
+# 超预期标准
+surprise_standards:
+  min_surprise_pct: 0.10        # 最小超预期幅度 10%
+  significant_surprise: 0.20     # 显著超预期 20%
+
+# 市场反应标准
+market_reaction:
+  min_price_recovery: 0.5       # 5日内价格恢复比例
+  observation_days: 5           # 观察天数
+  require_uptrend: true         # 要求处于上升趋势
+
+# 止损止盈
+risk:
+  stop_loss_pct: 0.08           # 止损 -8%
+  take_profit_pct: 0.20         # 止盈 +20%
+  max_holding_days: 20         # 最大持仓20日
+
+# 过滤条件
+filters:
+  min_market_cap_b: 1000       # 最低市值 100亿港元
+  min_price: 1.0              # 最低股价 1港元
+  exclude_st: true             # 排除ST股
+  market: "港股"             # 适用市场

@@ -1,0 +1,20 @@
+# 港股策略融合投资顾问 - 定时任务配置
+
+crons:
+  # 每日盘后推荐
+  - name: "每日盘后融合推荐"
+    schedule: "0 16 0 * * 1-5"    # 每周一到周五 16:00
+    action: generate_daily_fusion_recommendation
+    description: 收集10个港股策略的推荐，生成当日最优投资组合
+
+  # 早盘确认
+  - name: "早盘组合确认"
+    schedule: "0 9 15 * * 1-5"     # 每周一到周五 9:15
+    action: morning_portfolio_confirmation
+    description: 确认前一日推荐组合，开盘前最终确认
+
+  # 周度回顾
+  - name: "周度组合回顾"
+    schedule: "0 16 30 * * 5"       # 每周五 16:30
+    action: weekly_portfolio_review
+    description: 回顾本周推荐组合表现，评估各策略贡献

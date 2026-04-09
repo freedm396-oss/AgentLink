@@ -1,0 +1,46 @@
+# 配股砸盘抄底策略参数配置
+
+strategy:
+  name: "港股配股砸盘抄底策略"
+  version: "1.0.0"
+
+# 配股参数
+placement:
+  discount_min: 0.05          # 折价下限：> 5%
+  drop_min: 0.08               # 跌幅下限：-8%
+  drop_max: 0.15               # 跌幅上限：-15%（超过放弃）
+  min_institutions: 3           # 最少机构参与数
+
+# 资金用途（好坏排序）
+fund_usage:
+  good:
+    - "业务扩张"
+    - "产能扩张"
+    - "研发投入"
+    - "并购"
+  bad:
+    - "偿还债务"
+    - "补充运营资金"
+    - "一般企业用途"
+
+# 入场规则
+entry:
+  next_day_open: true          # 次日开盘买入
+  abort_if_drop: 0.03          # 如当日再跌3%则放弃
+
+# 止损止盈
+risk:
+  stop_loss_pct: 0.06         # 止损 -6%
+  take_profit_pct: 0.12       # 止盈 +12%
+
+# 持仓参数
+holding:
+  max_days: 15                # 最大持仓15日
+  check_interval_days: 3       # 每3日检查一次
+
+# 过滤条件
+filters:
+  min_market_cap: 5000       # 最低市值 50亿港元
+  min_daily_volume: 20000000  # 日成交额 > 2000万
+  exclude_st: true           # 排除ST股
+  market: "港股"             # 适用市场

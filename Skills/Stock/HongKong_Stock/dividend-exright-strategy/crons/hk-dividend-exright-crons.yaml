@@ -1,0 +1,20 @@
+# 港股分红除权博弈策略 - 定时任务配置
+
+crons:
+  # 每日开盘前扫描
+  - name: "开盘前高息股扫描"
+    schedule: "0 9 30 * * 1-5"    # 每周一到周五 9:30
+    action: scan_dividend_exright_opportunities
+    description: 开盘前扫描近期除权的高息蓝筹股
+
+  # 除权日开盘检查
+  - name: "除权日开盘检查"
+    schedule: "0 9 0 * * 1-5"     # 每周一到周五 9:00
+    action: check_exright_positions
+    description: 检查持仓是否已到除权日，及时开盘卖出
+
+  # 周末策略复盘
+  - name: "周末分红策略复盘"
+    schedule: "0 10 30 * * 6"     # 每周六 10:30
+    action: weekend_dividend_review
+    description: 复盘本周分红除权博弈策略表现

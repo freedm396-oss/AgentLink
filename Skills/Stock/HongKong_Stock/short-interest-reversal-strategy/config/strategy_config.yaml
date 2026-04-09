@@ -1,0 +1,40 @@
+# 沽空比率反转策略参数配置
+
+strategy:
+  name: "港股沽空比率反转策略"
+  version: "1.0.0"
+
+# 沽空参数
+short_interest:
+  high_threshold: 0.25       # 高沽空比率阈值 25%
+  consecutive_high_days: 3    # 连续3日高沽空
+  reversal_down_days: 2       # 连续2日下降（反转信号）
+  exit_threshold: 0.15       # 止盈沽空阈值 < 15%
+
+# 量能参数
+volume:
+  ma_days: 20                # 成交量均量周期
+  surge_multiplier: 1.5      # 量能放大需 > 均量 × 1.5
+
+# 市值参数
+market_cap:
+  min_billion_hkd: 100       # 最低市值 100亿港元
+
+# 买入条件
+entry:
+  high_short_confirmed: "short_ratio > 25% for 3 consecutive days"
+  reversal_signal: "short_ratio down 2 consecutive days"
+  volume_surge: "volume > ma20 * 1.5"
+  market_cap_filter: "market_cap > 100亿 HKD"
+
+# 止损止盈
+risk:
+  stop_loss_pct: 0.07        # 止损 -7%
+  take_profit_pct: 0.18     # 止盈 +18%
+  take_profit_short_threshold: 0.15  # 沽空比率 < 15% 止盈
+
+# 过滤条件
+filters:
+  min_daily_volume: 50000000  # 日成交额 > 5000万港元
+  min_price: 1.0             # 最低股价 1港元
+  market: "港股通"            # 适用市场

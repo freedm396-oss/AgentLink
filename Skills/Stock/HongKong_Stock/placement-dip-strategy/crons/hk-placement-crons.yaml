@@ -1,0 +1,20 @@
+# 港股配股砸盘抄底策略 - 定时任务配置
+
+crons:
+  # 每日开盘前扫描
+  - name: "开盘前配股砸盘扫描"
+    schedule: "0 9 45 * * 1-5"    # 每周一到周五 9:45
+    action: scan_placement_opportunities
+    description: 开盘前扫描近日有配股公告且股价超跌的标的
+
+  # 盘后配股公告检查
+  - name: "盘后配股公告检查"
+    schedule: "0 16 0 * * 1-5"    # 每周一到周五 16:00
+    action: check_placement_announcements
+    description: 盘后检查当日新发的配股公告
+
+  # 周末策略复盘
+  - name: "周末配股策略复盘"
+    schedule: "0 10 0 * * 6"      # 每周六 10:00
+    action: weekend_placement_review
+    description: 复盘本周配股砸盘抄底策略表现

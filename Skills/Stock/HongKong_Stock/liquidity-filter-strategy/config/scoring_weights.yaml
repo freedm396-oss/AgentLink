@@ -1,0 +1,48 @@
+# 流动性评分体系（100分制）
+
+weights:
+  volume_score: 0.30     # 成交额评分权重 30%
+  turnover_score: 0.25   # 换手率评分权重 25%
+  spread_score: 0.20    # 买卖价差评分权重 20%
+  market_cap_score: 0.25  # 市值评分权重 25%
+
+# 各维度评分细则
+scoring:
+  # 成交额评分 (满分 100)
+  volume_score:
+    excellent: 100           # 日均成交额 > 1亿港元
+    good: 80                # 日均成交额 5000万 - 1亿
+    acceptable: 60           # 日均成交额 2000万 - 5000万
+    marginal: 30            # 日均成交额 1000万 - 2000万
+    poor: 0                 # 日均成交额 < 1000万
+
+  # 换手率评分 (满分 100)
+  turnover_score:
+    excellent: 100           # 换手率 > 1%
+    good: 80                # 换手率 0.5% - 1%
+    acceptable: 60           # 换手率 0.3% - 0.5%
+    marginal: 30            # 换手率 0.1% - 0.3%
+    poor: 0                 # 换手率 < 0.1%
+
+  # 买卖价差评分 (满分 100)
+  spread_score:
+    excellent: 100           # 价差 < 0.05%
+    good: 80                # 价差 0.05% - 0.1%
+    acceptable: 60           # 价差 0.1% - 0.2%
+    marginal: 30            # 价差 0.2% - 0.5%
+    poor: 0                 # 价差 > 0.5%
+
+  # 市值评分 (满分 100)
+  market_cap_score:
+    excellent: 100           # 市值 > 500亿
+    good: 80                # 市值 100亿 - 500亿
+    acceptable: 60           # 市值 50亿 - 100亿
+    marginal: 30            # 市值 10亿 - 50亿
+    poor: 0                 # 市值 < 10亿
+
+# 综合评分等级（允许交易阈值）
+rating:
+  excellent: 80             # ≥80 极好流动性
+  good: 70                 # 70-79 良好流动性
+  acceptable: 60            # 60-69 可接受流动性
+  reject: 0                # <60 拒绝交易

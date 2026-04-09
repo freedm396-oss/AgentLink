@@ -1,0 +1,26 @@
+# 港股回购公告跟进策略 - Agent 配置
+name: hk-buyback-agent
+description: 港股回购公告跟进策略分析 Agent
+strategy: buyback-follow-strategy
+
+model: minimax/MiniMax-M2.7
+thinking: low
+
+skills:
+  - path: ../buyback-follow-strategy/SKILL.md
+    enabled: true
+
+tools:
+  - web_search
+  - web_fetch
+  - exec
+
+triggers:
+  - cron: "0 9 30 * * 1-5"    # 每周一到周五 9:30 开盘前扫描
+  - cron: "0 16 15 * * 1-5"   # 每周一到周五 16:15 盘后检查回购公告
+  - cron: "0 10 30 * * 6"     # 每周六 10:30 周末复盘
+
+actions:
+  - scan_buyback_opportunities
+  - analyze_buyback_positions
+  - buyback_alerts

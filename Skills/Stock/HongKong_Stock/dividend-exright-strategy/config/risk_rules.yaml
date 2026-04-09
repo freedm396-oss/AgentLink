@@ -1,0 +1,39 @@
+# 风险控制规则
+
+# 止损规则
+stop_loss:
+  fixed_pct: 0.03              # 固定止损 -3%
+  time_based: true             # 3日无上涨止损
+  trailing: false               # 短线不启用移动止盈
+
+# 止盈规则
+take_profit:
+  timing: "除权日开盘卖出"       # 必须在除权日开盘卖出
+  partial_exit: false            # 不分批，次日开盘清仓
+
+# 时间止损
+time_stop:
+  enabled: true
+  max_days: 5                 # 最大持仓5日
+  mandatory_exit: true         # 除权日强制出场
+
+# 市场环境过滤
+market_filter:
+  avoid_crash: true            # 大市单日跌超2%时不开新仓
+  hsi_ma_filter: true         # 恒指需在20日均线上方
+  volume_filter: true         # 大市成交额需正常
+
+# 个股过滤
+stock_filter:
+  min_yield: 0.05            # 股息率 > 5%
+  min_consecutive: 5         # 连续5年分红
+  min_market_cap_m: 10000  # 市值 > 100亿
+  min_volume: 10000000      # 日成交 > 1000万
+  exclude_st: true           # 排除ST股
+  exclude_financial_storm: true  # 排除金融危机期间的高杠杆银行股
+
+# 仓位管理
+position_size:
+  default_pct: 0.15           # 单只仓位 15%（短线高确定性）
+  max_total_pct: 0.60        # 总仓位 ≤ 60%
+  max_positions: 8            # 同时持仓最多8只（分散机会）

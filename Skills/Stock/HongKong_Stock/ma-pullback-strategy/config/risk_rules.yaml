@@ -1,0 +1,73 @@
+# config/risk_rules.yaml
+
+# 港股缩量回踩均线策略风险管理规则
+version: "1.0.0"
+
+# 止损规则
+stop_loss_rules:
+  percentage_stop:
+    enabled: true
+    percentage: 0.07
+    description: "固定7%止损"
+  
+  ma_stop:
+    enabled: true
+    condition: "close < ma20"
+    description: "跌破20日均线止损"
+  
+  atr_stop:
+    enabled: true
+    multiplier: 2
+    description: "2倍ATR止损"
+  
+  time_stop:
+    enabled: true
+    days: 15
+    min_profit: 0.02
+    description: "持仓15天盈利<2%离场"
+
+# 止盈规则
+take_profit_rules:
+  target_profit:
+    enabled: true
+    levels:
+      - percentage: 0.08
+        action: "减仓30%"
+      - percentage: 0.12
+        action: "减仓30%"
+      - percentage: 0.15
+        action: "清仓"
+  
+  trailing_stop:
+    enabled: true
+    percentage: 0.08
+    description: "最高点回撤8%止盈"
+  
+  ma_profit:
+    enabled: true
+    condition: "close < ma5"
+    description: "跌破5日线止盈"
+
+# 仓位管理
+position_sizing:
+  based_on_signal:
+    strong: 0.20    # 评分≥85
+    normal: 0.15    # 评分75-84
+    weak: 0.10      # 评分70-74
+  
+  based_on_liquidity:
+    high: 0.20      # 成交额>1亿
+    medium: 0.15    # 成交额>5000万
+    low: 0.10       # 成交额>2000万
+  
+  max_single_position: 0.20
+  max_portfolio_risk: 0.06
+
+# 港股特有过滤条件
+hk_filters:
+  exclude_penny_stocks: true    # 排除仙股
+  min_price: 1.0                # 最小股价1港元
+  min_market_cap: 100000000000  # 最小市值100亿
+  min_avg_turnover: 20000000    # 最小成交额2000万
+  exclude_warrants: true        # 排除涡轮
+  exclude_nc: true              # 排除牛熊证

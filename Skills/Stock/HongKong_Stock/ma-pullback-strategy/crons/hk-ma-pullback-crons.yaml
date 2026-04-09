@@ -1,0 +1,49 @@
+# crons/hk-ma-pullback-crons.yaml
+
+version: "1.0.0"
+description: "港股缩量回踩均线策略定时任务"
+
+crons:
+  # 港股收盘后扫描 - 16:30（港股收盘16:00）
+  - name: "after-hours-hk-scan"
+    schedule: "30 16 * * 1-5"
+    agent: "hk-ma-pullback-agent"
+    enabled: true
+    prompt: |
+      扫描港股今日出现缩量回踩20日线的股票。
+      重点关注：
+      1. 20日线斜率向上的股票
+      2. 成交量萎缩明显的股票
+      3. 成交额>2000万港元的机构股
+      输出前10只评分最高的股票。
+  
+  # 早盘确认 - 9:45（港股开盘9:30）
+  - name: "morning-hk-confirmation"
+    schedule: "45 9 * * 1-5"
+    agent: "hk-ma-pullback-agent"
+    enabled: true
+    prompt: |
+      确认昨日选出的港股回踩信号。
+      检查：
+      1. 是否出现企稳信号
+      2. 开盘价是否合理
+      3. 是否出现买入机会
+  
+  # 盘中监控 - 14:30
+  - name: "intraday-hk-monitor"
+    schedule: "30 14 * * 1-5"
+    agent: "hk-ma-pullback-agent"
+    enabled: true
+    prompt: |
+      监控港股持仓股票状态。
+      检查：
+      1. 是否触发止损
+      2. 是否达到止盈目标
+      3. 是否需要调整仓位
+
+execution:
+  timeout: 300
+  retry: 3
+  notification:
+    on_success: true
+    on_failure: true

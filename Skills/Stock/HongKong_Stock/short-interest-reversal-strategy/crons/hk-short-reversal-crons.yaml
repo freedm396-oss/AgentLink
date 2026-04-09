@@ -1,0 +1,20 @@
+# 港股沽空比率反转策略 - 定时任务配置
+
+crons:
+  # 每日盘前分析
+  - name: "盘前沽空反转扫描"
+    schedule: "0 10 0 * * 1-5"    # 每周一到周五 10:00
+    action: scan_short_reversal_opportunities
+    description: 盘前分析高沽空比率股票的反转信号
+
+  # 盘后持仓检查
+  - name: "盘后持仓检查"
+    schedule: "0 16 30 * * 1-5"   # 每周一到周五 16:30
+    action: check_positions
+    description: 检查持仓是否触发止盈/止损
+
+  # 周末策略复盘
+  - name: "周末沽空策略复盘"
+    schedule: "0 11 0 * * 6"      # 每周六 11:00
+    action: weekend_review
+    description: 复盘本周沽空反转策略表现

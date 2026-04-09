@@ -1,0 +1,20 @@
+# 港股回购公告跟进策略 - 定时任务配置
+
+crons:
+  # 每日开盘前扫描
+  - name: "开盘前回购扫描"
+    schedule: "0 9 30 * * 1-5"    # 每周一到周五 9:30
+    action: scan_buyback_opportunities
+    description: 开盘前扫描7日内有回购公告且股价低于回购均价的标的
+
+  # 盘后回购公告检查
+  - name: "盘后回购公告检查"
+    schedule: "0 16 15 * * 1-5"   # 每周一到周五 16:15
+    action: check_buyback_announcements
+    description: 盘后检查当日新发的回购公告
+
+  # 周末策略复盘
+  - name: "周末回购策略复盘"
+    schedule: "0 10 30 * * 6"     # 每周六 10:30
+    action: weekend_buyback_review
+    description: 复盘本周回购跟进策略表现

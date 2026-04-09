@@ -1,0 +1,20 @@
+# 港股做空止损策略 - 定时任务配置
+
+crons:
+  # 每日开盘前风控检查
+  - name: "开盘前止损风控检查"
+    schedule: "0 9 10 * * 1-5"    # 每周一到周五 9:10
+    action: pre_market_stop_loss_check
+    description: 开盘前检查所有持仓是否触及止损条件
+
+  # 盘后风控检查
+  - name: "盘后止损风控检查"
+    schedule: "0 14 50 * * 1-5"   # 每周一到周五 14:50
+    action: post_market_stop_loss_check
+    description: 盘后检查所有持仓，更新止损状态
+
+  # 周末风控复盘
+  - name: "周末止损策略复盘"
+    schedule: "0 10 0 * * 6"      # 每周六 10:00
+    action: weekend_stop_loss_review
+    description: 复盘本周所有止损执行记录，分析原因
