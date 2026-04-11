@@ -17,13 +17,16 @@ try:
     from .risk_assessor import RiskAssessor
     from .report_generator import EarningsReportGenerator
 except ImportError:
-    # 直接运行时
+    import sys
+    import os
+    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/earnings-surprise-strategy/skills/scripts')
     from data_fetcher import EarningsDataFetcher
     from surprise_analyzer import SurpriseAnalyzer
     from quality_analyzer import QualityAnalyzer
     from market_analyzer import MarketReactionAnalyzer
     from risk_assessor import RiskAssessor
     from report_generator import EarningsReportGenerator
+
 
 class EarningsSurpriseScanner:
     """财报超预期扫描器"""

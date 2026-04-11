@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""limit-up-retrace-strategy 功能测试"""
+"""morning-star-strategy 功能测试"""
 
 import sys
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy')
+sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/morning-star-strategy')
 
 print('='*80)
-print('涨停板首次回调策略 - 功能测试')
+print('早晨之星策略 - 功能测试')
 print('='*80)
 print()
 
 # 测试1: 导入所有模块
 print('1. 测试模块导入...')
 try:
-    from skills.scripts.analyzer import LimitUpRetraceAnalyzer
+    from skills.scripts.analyzer import MorningStarAnalyzer
     from skills.scripts.scanner import main as scanner_main
     from skills.scripts.data_source_adapter import DataSourceAdapter
     print('   ✅ 所有模块导入成功')
@@ -36,7 +36,7 @@ print()
 print('3. 测试配置一致性...')
 try:
     import yaml
-    with open('/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy/config/scoring_weights.yaml', 'r') as f:
+    with open('/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/morning-star-strategy/config/scoring_weights.yaml', 'r') as f:
         scoring = yaml.safe_load(f)
     weights = scoring.get('weights', {})
     total = sum(weights.values())
