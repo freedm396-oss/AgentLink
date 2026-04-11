@@ -1,206 +1,199 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-财报超预期策略 - 完整演示
-"""
+财报超预期策略 - 演示程序
+使用 baostock 多数据源获取真实财报数据
 
+用法:
+    python3 run_demo.py [--stock CODE] [--top N] [--year Y] [--quarter Q]
+"""
 import sys
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/earnings-surprise-strategy/skills/scripts')
+import os
 
-from surprise_analyzer import SurpriseAnalyzer
-from quality_analyzer import QualityAnalyzer
-from market_analyzer import MarketReactionAnalyzer
+# 添加 scripts 目录到路径
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, 'skills', 'scripts'))
+
+from earnings_fetcher_multi import MultiSourceEarningsFetcher
 from risk_assessor import RiskAssessor
 from datetime import datetime
+import argparse
 
-def analyze_stock(stock_code, stock_name, earnings_data):
+
+def get_signal(score):
+    if score >= 80: return '🔥 强烈推荐', '强烈买入'
+    if score >= 70: return '✅ 推荐', '买入'
+    if score >= 60: return '👀 关注', '观望'
+    return '❌ 暂缓', '观望'
+
+
+def calc_score(e: dict) -> float:
+    """综合评分（复用 fetcher 的评分逻辑）"""
+    surprise_score = 0
+    yoy = e.get('net_profit_yoy', 0)
+    if yoy >= 50: surprise_score = 100
+    elif yoy >= 30: surprise_score = 85
+    elif yoy >= 20: surprise_score = 70
+    elif yoy >= 10: surprise_score = 55
+    elif yoy >= 0: surprise_score = 40
+    else: surprise_score = 20
+
+    quality_score = 0
+    roe = e.get('roe', 0)
+    gm = e.get('gross_margin', 0)
+    if roe >= 20 and gm >= 30: quality_score = 100
+    elif roe >= 15 and gm >= 20: quality_score = 80
+    elif roe >= 10: quality_score = 65
+    elif roe >= 5: quality_score = 50
+    else: quality_score = 30
+
+    revenue_score = 50
+    ryoy = e.get('revenue_yoy', 0)
+    if ryoy >= 30: revenue_score = 100
+    elif ryoy >= 20: revenue_score = 80
+    elif ryoy >= 10: revenue_score = 60
+
+    eps_score = 50
+    eps = e.get('eps', 0)
+    if eps > 1: eps_score = 100
+    elif eps >= 0.5: eps_score = 70
+
+    total = (surprise_score * 0.30 + quality_score * 0.25 +
+             revenue_score * 0.20 + eps_score * 0.15 + 75 * 0.10)
+    return round(total, 2)
+
+
+def analyze_single(fetcher: MultiSourceEarningsFetcher, stock_code: str, year: int, quarter: int):
     """分析单只股票"""
-    # 创建分析器
-    surprise = SurpriseAnalyzer()
-    quality = QualityAnalyzer()
-    market = MarketReactionAnalyzer()
+    print(f"\n{'='*60}")
+    print(f"📊 {stock_code} 财报分析")
+    print(f"{'='*60}")
+
+    earnings = fetcher.get_earnings(stock_code, year, quarter)
+    if not earnings:
+        print(f"  无法获取 {stock_code} 的财报数据")
+        return None
+
+    price = fetcher.get_realtime_price(stock_code)
+    if price:
+        earnings['current_price'] = price
+
+    score = calc_score(earnings)
+    sig_emoji, sig_text = get_signal(score)
+
+    print(f"  股票: {earnings['stock_name']}({stock_code})")
+    print(f"  财报期: {earnings['year']}Q{earnings['quarter']} (披露日: {earnings['pub_date']})")
+    print(f"  综合评分: {score}分 {sig_emoji}")
+    print()
+    print(f"  📈 业绩超预期:")
+    print(f"     净利润YOY: {earnings['net_profit_yoy']:+.2f}%")
+    print(f"     营收YOY:   {earnings['revenue_yoy']:+.2f}%")
+    print(f"     EPS(TTM): {earnings['eps']:.2f} 元")
+    print(f"  📐 增长质量:")
+    print(f"     ROE:      {earnings['roe']:.2f}%")
+    print(f"     毛利率:   {earnings['gross_margin']:.2f}%")
+    print(f"     净利率:   {earnings['net_margin']:.2f}%")
+    print(f"  💰 实时价格: {price if price else '获取失败'}")
+    print(f"  数据来源: {earnings['source']}")
+
+    # 风险评估
     risk = RiskAssessor()
-    
-    # 1. 超预期分析
-    surprise_result = surprise.analyze(earnings_data)
-    
-    # 2. 质量分析
-    try:
-        quality_result = quality.analyze(stock_code, earnings_data)
-    except:
-        quality_result = {'score': 70, 'level': '良好增长'}
-    
-    # 3. 市场反应分析
-    market_result = market.analyze(stock_code, earnings_data.get('announce_date', ''))
-    
-    # 4. 风险评估
     stock_data = {
-        'current_price': earnings_data.get('current_price', 100),
-        'market_cap': earnings_data.get('market_cap', 1000),
-        'avg_volume': earnings_data.get('avg_volume', 1000000),
+        'current_price': price or 100,
+        'market_cap': 1000,
+        'avg_volume': 1000000,
         'volatility': 0.25
     }
     risk_result = risk.assess(stock_data)
-    
-    # 计算综合得分
-    total_score = (
-        surprise_result['surprise_score'] * 0.30 +
-        quality_result['score'] * 0.25 +
-        market_result['reaction_score'] * 0.20 +
-        75 * 0.15 +  # 机构态度（模拟）
-        80 * 0.10    # 行业景气度（模拟）
-    )
-    
-    return {
-        'stock_code': stock_code,
-        'stock_name': stock_name,
-        'quarter': earnings_data.get('quarter', ''),
-        'total_score': round(total_score, 2),
-        'surprise_result': surprise_result,
-        'quality_result': quality_result,
-        'market_result': market_result,
-        'risk_result': risk_result,
-        'net_profit_yoy': earnings_data.get('net_profit_yoy', 0),
-        'revenue_yoy': earnings_data.get('revenue_yoy', 0),
-        'eps_surprise': earnings_data.get('eps_surprise', 0)
-    }
+    print(f"  ⚠️ 风险: {risk.get_risk_level_name(risk_result['risk_level'])} | 建议仓位: {risk_result['suggested_position']*100:.0f}%")
+
+    return {'earnings': earnings, 'score': score, 'signal': sig_text}
+
+
+def scan_demo(fetcher: MultiSourceEarningsFetcher, year: int, quarter: int, top_n: int):
+    """演示扫描模式 - 扫描代表性股票"""
+    print(f"\n{'='*60}")
+    print(f"🔍 财报超预期扫描 - {year}Q{quarter}")
+    print(f"{'='*60}")
+
+    # A股代表性股票池
+    demo_stocks = [
+        ('600519', '贵州茅台'), ('000858', '五粮液'), ('000001', '平安银行'),
+        ('600036', '招商银行'), ('002594', '比亚迪'), ('300750', '宁德时代'),
+        ('601318', '中国平安'), ('600276', '恒瑞医药'), ('002415', '海康威视'),
+        ('300059', '东方财富'), ('600900', '长江电力'), ('601012', '隆基绿能'),
+        ('603259', '药明康德'), ('600585', '海螺水泥'), ('000333', '美的集团'),
+        ('002236', '大华股份'), ('300015', '爱尔眼科'), ('600028', '中国石化'),
+        ('601398', '工商银行'), ('600050', '中国联通'),
+    ]
+
+    results = []
+    print(f"\n开始分析 {len(demo_stocks)} 只代表性股票...\n")
+
+    for code, name in demo_stocks:
+        sys.stdout.write(f"  分析 {name}({code})... ")
+        sys.stdout.flush()
+        e = fetcher.get_earnings(code, year, quarter)
+        if e:
+            price = fetcher.get_realtime_price(code)
+            if price:
+                e['current_price'] = price
+            score = calc_score(e)
+            sys.stdout.write(f"{score}分\n")
+            sys.stdout.flush()
+            results.append({**e, 'total_score': score})
+        else:
+            sys.stdout.write("无数据\n")
+            sys.stdout.flush()
+
+    results.sort(key=lambda x: x['total_score'], reverse=True)
+
+    print(f"\n{'='*60}")
+    print(f"📊 财报超预期策略 - {year}Q{quarter} 分析结果")
+    print(f"{'='*60}")
+
+    strong = sum(1 for r in results if r['total_score'] >= 75)
+    buy = sum(1 for r in results if 70 <= r['total_score'] < 75)
+    watch = sum(1 for r in results if 60 <= r['total_score'] < 70)
+    print(f"  强烈推荐(≥75分): {strong}只 | 推荐(70-74分): {buy}只 | 关注(60-69分): {watch}只")
+    print()
+
+    for i, r in enumerate(results[:top_n], 1):
+        emoji, _ = get_signal(r['total_score'])
+        price_str = f"${r.get('current_price', 'N/A')}" if r.get('current_price') else 'N/A'
+        print(f"{emoji} {i}. {r['stock_name']}({r['stock_code']})")
+        print(f"   综合: {r['total_score']}分 | {r['year']}Q{r['quarter']} | 现价:{price_str}")
+        print(f"   净利润YOY: {r['net_profit_yoy']:+.2f}% | 营收YOY: {r['revenue_yoy']:+.2f}% | EPS: {r['eps']:.2f}")
+        print(f"   ROE: {r['roe']:.2f}% | 毛利率: {r['gross_margin']:.2f}% | 净利率: {r['net_margin']:.2f}%")
+        print()
 
 
 def main():
-    print('='*80)
-    print('财报超预期策略 - 2026年一季度财报分析')
-    print('='*80)
-    print(f'分析时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
-    print()
-    
-    # 模拟2026年一季度财报数据
-    stocks_data = [
-        {
-            'stock_code': '600519',
-            'stock_name': '贵州茅台',
-            'quarter': '2026Q1',
-            'announce_date': '2026-04-25',
-            'net_profit_yoy': 35.2,
-            'revenue_yoy': 28.5,
-            'eps_surprise': 18.5,
-            'gross_margin': 92.1,
-            'roe': 28.5,
-            'current_price': 1700,
-            'market_cap': 2100
-        },
-        {
-            'stock_code': '002594',
-            'stock_name': '比亚迪',
-            'quarter': '2026Q1',
-            'announce_date': '2026-04-28',
-            'net_profit_yoy': 45.6,
-            'revenue_yoy': 38.9,
-            'eps_surprise': 25.3,
-            'gross_margin': 21.8,
-            'roe': 18.5,
-            'current_price': 280,
-            'market_cap': 800
-        },
-        {
-            'stock_code': '300750',
-            'stock_name': '宁德时代',
-            'quarter': '2026Q1',
-            'announce_date': '2026-04-22',
-            'net_profit_yoy': 52.3,
-            'revenue_yoy': 42.1,
-            'eps_surprise': 32.1,
-            'gross_margin': 26.5,
-            'roe': 22.8,
-            'current_price': 220,
-            'market_cap': 950
-        },
-        {
-            'stock_code': '000001',
-            'stock_name': '平安银行',
-            'quarter': '2026Q1',
-            'announce_date': '2026-04-20',
-            'net_profit_yoy': 22.8,
-            'revenue_yoy': 15.3,
-            'eps_surprise': 8.2,
-            'gross_margin': 45.2,
-            'roe': 12.1,
-            'current_price': 12,
-            'market_cap': 2300
-        },
-        {
-            'stock_code': '000858',
-            'stock_name': '五粮液',
-            'quarter': '2026Q1',
-            'announce_date': '2026-04-23',
-            'net_profit_yoy': 28.5,
-            'revenue_yoy': 22.1,
-            'eps_surprise': 15.8,
-            'gross_margin': 75.2,
-            'roe': 24.5,
-            'current_price': 165,
-            'market_cap': 650
-        }
-    ]
-    
-    # 分析所有股票
-    results = []
-    print('正在分析...')
-    print()
-    
-    for data in stocks_data:
-        print(f'  分析 {data["stock_name"]} ({data["stock_code"]})...')
-        result = analyze_stock(data['stock_code'], data['stock_name'], data)
-        results.append(result)
-    
-    # 按得分排序
-    results.sort(key=lambda x: x['total_score'], reverse=True)
-    
-    # 统计
-    strong_buy = sum(1 for r in results if r['total_score'] >= 75)
-    buy = sum(1 for r in results if 70 <= r['total_score'] < 75)
-    watch = sum(1 for r in results if 60 <= r['total_score'] < 70)
-    
-    print()
-    print('='*80)
-    print('2026年一季度财报超预期分析结果')
-    print('='*80)
-    print()
-    print(f'统计: 强烈推荐(≥75分): {strong_buy}只 | 推荐(70-74分): {buy}只 | 关注(60-69分): {watch}只')
-    print()
-    
-    # 显示结果
-    print('【分析结果】')
-    print('-'*80)
-    
-    surprise_analyzer = SurpriseAnalyzer()
-    risk_assessor = RiskAssessor()
-    
-    for i, r in enumerate(results, 1):
-        if r['total_score'] >= 75:
-            signal = '强烈推荐'
-            emoji = '🔥'
-        elif r['total_score'] >= 70:
-            signal = '推荐'
-            emoji = '✅'
-        elif r['total_score'] >= 60:
-            signal = '关注'
-            emoji = '👀'
-        else:
-            signal = '观望'
-            emoji = '❌'
-        
-        print(f'{emoji} {i}. {r["stock_name"]} ({r["stock_code"]})')
-        print(f'   综合得分: {r["total_score"]}分 | 信号: {signal}')
-        print(f'   业绩: 净利润+{r["net_profit_yoy"]}% | 营收+{r["revenue_yoy"]}% | EPS超预期+{r["eps_surprise"]}%')
-        print(f'   超预期: {surprise_analyzer.get_surprise_level_name(r["surprise_result"]["surprise_level"])} ({r["surprise_result"]["surprise_score"]}分)')
-        print(f'   质量: {r["quality_result"]["level"]} ({r["quality_result"]["score"]}分)')
-        print(f'   风险: {risk_assessor.get_risk_level_name(r["risk_result"]["risk_level"])}')
-        print(f'   建议仓位: {r["risk_result"]["suggested_position"]*100:.0f}%')
-        print()
-    
-    print('='*80)
-    print('分析完成')
-    print('注意：以上数据为模拟数据，实际分析需要连接akshare获取真实财报数据')
-    print('='*80)
+    parser = argparse.ArgumentParser(description='财报超预期策略')
+    parser.add_argument('--stock', type=str, help='单只股票代码')
+    parser.add_argument('--year', type=int, default=2024, help='财报年度')
+    parser.add_argument('--quarter', type=int, default=4, help='季度(1-4)')
+    parser.add_argument('--top', type=int, default=10, help='显示前N名')
+    parser.add_argument('--scan', action='store_true', help='扫描演示股票池')
+    args = parser.parse_args()
+
+    print("=" * 60)
+    print("📈 财报超预期策略 - 多数据源版")
+    print(f"📅 分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print("=" * 60)
+
+    fetcher = MultiSourceEarningsFetcher()
+    print(f"\n✅ 数据源就绪: {', '.join(fetcher.available_sources) or '无可用数据源'}")
+    if not fetcher.available_sources:
+        print("❌ 没有可用的数据源，无法继续")
+        return
+
+    if args.stock:
+        analyze_single(fetcher, args.stock, args.year, args.quarter)
+    else:
+        scan_demo(fetcher, args.year, args.quarter, args.top)
+
+    print("\n✅ 分析完成")
 
 
 if __name__ == '__main__':

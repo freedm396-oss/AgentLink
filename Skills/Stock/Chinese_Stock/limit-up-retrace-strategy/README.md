@@ -10,7 +10,7 @@
 
 ```
 买入条件：
-1. 近期出现过涨停板（5个交易日内）
+1. 近期出现过涨停板（近10个交易日内）
 2. 股价从涨停价回调，但回调幅度<15%
 3. 回调至重要支撑位（涨停价/5日线/前高）
 4. 回调过程中成交量明显萎缩
@@ -113,7 +113,7 @@ limit-up-retrace-strategy/
 ```yaml
 # 涨停条件
 limit_up_conditions:
-  lookback_days: 5              # 查看5个交易日内的涨停
+  lookback_days: 10             # 查看10个交易日内的涨停
   min_limit_up_count: 1         # 至少1个涨停
   max_limit_up_count: 3         # 最多3个涨停（避免过度炒作）
 

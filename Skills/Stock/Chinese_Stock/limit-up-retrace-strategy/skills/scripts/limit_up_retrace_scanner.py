@@ -5,51 +5,137 @@
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy')
 
 import argparse
-from datetime import datetime
-from typing import List, Dict
+from datetime import datetime, timedelta
+from typing import List, Dict, Tuple
 
-from limit_up_retrace_analyzer import LimitUpRetraceAnalyzer
+from skills.scripts.limit_up_retrace_analyzer import LimitUpRetraceAnalyzer
+
+
+def _get_recent_limit_up_stocks() -> List[Tuple[str, str]]:
+    """
+    获取近10个交易日内的涨停股票列表
+    仅使用 akshare（唯一支持涨停池的数据源）
+    返回: [(code, name), ...]
+    """
+    import warnings
+    warnings.filterwarnings('ignore')
+
+    try:
+        import akshare as ak
+    except ImportError:
+        print("⚠️ akshare 未安装，无法获取涨停股票列表")
+        print("  请安装: pip install akshare")
+        return []
+
+    results = []
+    today = datetime.now()
+
+    # 近10个交易日（含今日，若已收盘则含今日涨停）
+    # 周末不交易，最多往前找14个自然日
+    for days_back in range(0, 14):
+        check_date = today - timedelta(days=days_back)
+        if check_date.weekday() >= 5:  # 跳过周末
+            continue
+        date_str = check_date.strftime("%Y%m%d")
+
+        try:
+            if days_back == 0:
+                # 今日：实时涨停池
+                df = ak.stock_zt_pool_em(date=date_str)
+            else:
+                # 历史：历史涨停池
+                df = ak.stock_zt_pool_hist_em(symbol="涨停股", date=date_str)
+        except Exception:
+            continue
+
+        if df is None or df.empty:
+            continue
+
+        # 收集涨停股代码和名称
+        for _, row in df.iterrows():
+            try:
+                code = str(row.get('代码', '')).strip()
+                name = str(row.get('名称', row.get('股票名称', ''))).strip()
+                if code and len(code) == 6 and code not in [r[0] for r in results]:
+                    results.append((code, name))
+            except Exception:
+                continue
+
+        if len(results) >= 200:  # 最多收集200只，避免重复遍历
+            break
+
+    return results
 
 
 def scan_all_stocks(analyzer: LimitUpRetraceAnalyzer, top_n: int = 20) -> List[Dict]:
-    """扫描全市场"""
-    print(f"开始扫描全市场股票... {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"使用数据源: {analyzer.data_adapter.source}")
-    
-    # 获取股票列表
+    """
+    扫描近10个交易日涨停股中回调机会
+    策略：只分析近期涨停过的股票，大幅提升效率
+    """
+    print(f"开始扫描近10日涨停股票... {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # 1. 获取近10日涨停股票
+    print("📊 正在获取近10日涨停股票池...")
+    limit_up_candidates = _get_recent_limit_up_stocks()
+
+    if not limit_up_candidates:
+        print("⚠️ 未能获取到近10日涨停股票（可能网络问题或 akshare 不可用）")
+        print("   尝试备用方案：使用 baostock 扫描全市场...")
+        return _scan_all_stocks_fallback(analyzer, top_n)
+
+    print(f"✅ 获取到 {len(limit_up_candidates)} 只近10日涨停股")
+
+    # 2. 对每只涨停股分析回调机会
+    candidates = []
+    total = len(limit_up_candidates)
+
+    for idx, (stock_code, stock_name) in enumerate(limit_up_candidates, 1):
+        if idx % 20 == 0:
+            print(f"  进度: {idx}/{total} ({idx/total*100:.1f}%)")
+
+        result = analyzer.analyze_stock(stock_code, stock_name)
+        if result and result['score'] >= 75:
+            candidates.append(result)
+            print(f"  ✅ {stock_name}({stock_code}): {result['score']}分")
+
+    # 排序
+    candidates.sort(key=lambda x: x['score'], reverse=True)
+
+    print(f"\n扫描完成，近10日涨停股中发现 {len(candidates)} 只回调机会")
+    return candidates[:top_n]
+
+
+def _scan_all_stocks_fallback(analyzer: LimitUpRetraceAnalyzer, top_n: int) -> List[Dict]:
+    """
+    备用扫描：akshare 不可用时，使用 baostock 获取全市场列表
+    （效率较低，仅作降级方案）
+    """
+    print(f"⚠️ 使用 baostock 全市场扫描（低效，仅作备用）")
     try:
         stock_list = analyzer.data_adapter.get_stock_list()
         if stock_list is None or stock_list.empty:
             print("获取股票列表失败")
             return []
-        print(f"获取到{len(stock_list)}只股票")
+        print(f"获取到{len(stock_list)}只股票（此方式效率较低）")
     except Exception as e:
         print(f"获取股票列表失败: {e}")
         return []
-    
+
     candidates = []
     total = len(stock_list)
-    
+
     for idx, (_, row) in enumerate(stock_list.iterrows(), 1):
-        stock_code = row['code']
-        stock_name = row.get('name', stock_code)
-        
-        # 进度显示
-        if idx % 100 == 0:
-            print(f"进度: {idx}/{total} ({idx/total*100:.1f}%)")
-        
-        # 分析
-        result = analyzer.analyze_stock(stock_code, stock_name)
+        if idx % 200 == 0:
+            print(f"  进度: {idx}/{total} ({idx/total*100:.1f}%)")
+        result = analyzer.analyze_stock(row['code'], row.get('name', row['code']))
         if result and result['score'] >= 75:
             candidates.append(result)
-            print(f"  ✅ {stock_name}({stock_code}): {result['score']}分")
-    
-    # 排序
+            print(f"  ✅ {result['stock_name']}({result['stock_code']}): {result['score']}分")
+
     candidates.sort(key=lambda x: x['score'], reverse=True)
-    
     print(f"\n扫描完成，发现{len(candidates)}只符合条件的股票")
     return candidates[:top_n]
 
@@ -153,7 +239,7 @@ def main():
     if args.scan:
         # 全市场扫描
         results = scan_all_stocks(analyzer, top_n=args.top)
-        print_report(results, "全市场扫描")
+        print_report(results, "近10日涨停股回调扫描")
     
     elif args.sector:
         # 板块分析

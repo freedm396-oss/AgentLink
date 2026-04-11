@@ -1,10 +1,10 @@
 # 评分权重配置
 weights:
-  limit_up_quality: 0.25       # 涨停质量 25%
-  retrace_quality: 0.20        # 回调质量 20%
-  support_strength: 0.20       # 支撑强度 20%
-  volume_shrink: 0.20          # 缩量程度 20%
-  stop_signal: 0.15            # 止跌信号 15%
+  limit_up_quality: 0.25       # 涨停质量
+  retrace_quality: 0.20        # 回调质量
+  support_strength: 0.20       # 支撑强度
+  volume_shrink: 0.20          # 缩量程度
+  stop_signal: 0.15            # 止跌信号
 
 # 评分阈值
 thresholds:

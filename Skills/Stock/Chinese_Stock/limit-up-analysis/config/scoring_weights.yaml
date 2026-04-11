@@ -2,11 +2,12 @@
 # 总权重应为 100%
 
 weights:
-  sealing_strength: 0.30      # 封板强度分析 (30%)
-  sector_effect: 0.25         # 板块效应分析 (25%)
-  capital_flow: 0.20          # 资金流向分析 (20%)
-  technical_pattern: 0.15     # 技术形态分析 (15%)
-  market_sentiment: 0.10      # 市场情绪分析 (10%)
+  sealing_strength: 0.28      # 封板强度分析 (28%)
+  sector_effect: 0.22         # 板块效应分析 (22%)
+  capital_flow: 0.18          # 资金流向分析 (18%)
+  technical_pattern: 0.14     # 技术形态分析 (14%)
+  market_sentiment: 0.08      # 市场情绪分析 (8%)
+  news_sentiment: 0.10        # 新闻情绪分析 (10%)
 
 # 评分等级
 categories:

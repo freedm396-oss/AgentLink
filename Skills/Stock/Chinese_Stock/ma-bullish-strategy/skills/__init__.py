@@ -1,1 +1,1 @@
-# ma_bullish skill
+# ma_bullish package

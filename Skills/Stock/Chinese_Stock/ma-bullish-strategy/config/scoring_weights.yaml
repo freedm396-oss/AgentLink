@@ -1,7 +1,7 @@
 # ma-bullish-strategy/config/scoring_weights.yaml
 
 # 均线多头排列策略评分权重配置
-version: "1.0.0"
+version: "v1.2.0"
 description: "各维度评分权重及评分标准"
 
 weights:

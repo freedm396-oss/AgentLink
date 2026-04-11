@@ -6,7 +6,7 @@ strategy_config:
 
 # 涨停条件
 limit_up_conditions:
-  lookback_days: 5             # 查看5个交易日内的涨停
+  lookback_days: 10            # 查看10个交易日内的涨停
   min_limit_up_count: 1        # 至少1个涨停
   max_limit_up_count: 3        # 最多3个涨停（避免过度炒作）
   min_limit_up_pct: 9.5        # 最小涨幅9.5%（考虑ST股）

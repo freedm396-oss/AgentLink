@@ -5,7 +5,7 @@
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy')
 
 import pandas as pd
 import numpy as np
@@ -15,44 +15,61 @@ import yaml
 
 # 导入数据源适配器
 try:
-    from data_source_adapter import DataSourceAdapter
+    from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/ma-bullish-strategy/skills/ma_bullish/scripts')
-    from data_source_adapter import DataSourceAdapter
+    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy')
+    from skills.scripts.data_source_adapter import DataSourceAdapter
 
 
 class LimitUpRetraceAnalyzer:
     """涨停板首次回调分析器"""
     
+    # 默认权重（当配置文件加载失败时使用）
+    DEFAULT_WEIGHTS = {
+        'limit_up_quality': 0.25,
+        'retrace_quality': 0.20,
+        'support_strength': 0.20,
+        'volume_shrink': 0.20,
+        'stop_signal': 0.15
+    }
+
     def __init__(self, data_source: str = "auto"):
         self.name = "涨停板首次回调策略"
         self.version = "v1.0.0"
-        
-        # 加载配置
-        self.config = self._load_config()
-        
-        # 评分权重
-        self.weights = {
-            'limit_up_quality': 0.25,
-            'retrace_quality': 0.20,
-            'support_strength': 0.20,
-            'volume_shrink': 0.20,
-            'stop_signal': 0.15
-        }
-        
+
+        # 从 scoring_weights.yaml 读取评分权重
+        self.weights = self._load_weights()
+
         # 初始化数据源
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源")
-    
-    def _load_config(self) -> Dict:
-        """加载策略配置"""
-        config_path = '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/limit-up-retrace-strategy/config/strategy_config.yaml'
+
+    def _load_weights(self) -> Dict[str, float]:
+        """
+        从 scoring_weights.yaml 加载评分权重
+        若加载失败，打印警告并使用 DEFAULT_WEIGHTS
+        """
+        weights_path = '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy/config/scoring_weights.yaml'
         try:
-            with open(config_path, 'r') as f:
-                return yaml.safe_load(f)
-        except:
-            return {}
+            with open(weights_path, 'r', encoding='utf-8') as f:
+                cfg = yaml.safe_load(f)
+            weights_data = cfg.get('weights', {})
+            # 转换为 float
+            weights = {k: float(v) for k, v in weights_data.items()}
+            total = sum(weights.values())
+            total_pct = total * 100
+            if abs(total_pct - 100.0) > 0.1:
+                print(f"[配置警告] scoring_weights.yaml 权重总和不等于 100% ({total_pct:.1f}%)，使用默认值")
+                return dict(self.DEFAULT_WEIGHTS)
+            print(f"[配置加载] scoring_weights.yaml OK, weights={ {k: f'{v*100:.0f}%' for k, v in weights.items()} }")
+            return weights
+        except FileNotFoundError:
+            print(f"[配置警告] scoring_weights.yaml 未找到，使用默认权重")
+            return dict(self.DEFAULT_WEIGHTS)
+        except Exception as e:
+            print(f"[配置警告] scoring_weights.yaml 加载失败: {e}，使用默认权重")
+            return dict(self.DEFAULT_WEIGHTS)
     
     def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
         """
@@ -158,7 +175,7 @@ class LimitUpRetraceAnalyzer:
     
     def _find_recent_limit_up(self, df: pd.DataFrame) -> Optional[Dict]:
         """查找近期涨停"""
-        lookback = 5  # 查看5个交易日
+        lookback = 10  # 查看10个交易日
         
         for i in range(1, min(lookback + 1, len(df))):
             idx = len(df) - i

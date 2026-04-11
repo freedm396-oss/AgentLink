@@ -3,7 +3,7 @@
 # 均线策略参数配置
 strategy:
   name: "均线多头排列策略"
-  version: "1.0.0"
+  version: "v1.2.0"
   
   # 均线参数
   ma_parameters:
