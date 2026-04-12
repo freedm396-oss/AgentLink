@@ -14,6 +14,8 @@ from datetime import datetime
 from typing import List, Dict
 
 from skills.scripts.analyzer import GapFillAnalyzer
+import yaml
+import os
 
 
 def scan_all_stocks(analyzer: GapFillAnalyzer, top_n: int = 20) -> List[Dict]:
@@ -58,9 +60,18 @@ def scan_all_stocks(analyzer: GapFillAnalyzer, top_n: int = 20) -> List[Dict]:
     return candidates[:top_n]
 
 
+def _load_watchlist():
+    """加载自选股池"""
+    path = '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/my_stock_pool/watchlist.yaml'
+    if not os.path.exists(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    return data.get('watchlist', {})
+
+
 def analyze_sector(analyzer: GapFillAnalyzer, sector_name: str) -> List[Dict]:
-    """分析指定板块"""
-    # 板块股票列表
+    """分析指定板块（预定义板块）"""
     sectors = {
         '科技': ['000938', '000977', '002230', '002236', '002415', '300033', '300059', '600570', '600584', '603019'],
         '医药': ['000538', '000623', '000999', '002001', '002007', '300003', '300015', '600276', '600436', '603259'],
@@ -89,6 +100,48 @@ def analyze_sector(analyzer: GapFillAnalyzer, sector_name: str) -> List[Dict]:
     
     candidates.sort(key=lambda x: x['score'], reverse=True)
     return candidates
+
+
+def analyze_watchlist(analyzer: GapFillAnalyzer, sector: str = None, top_n: int = 20) -> List[Dict]:
+    """分析自选股池，支持指定板块或全部"""
+    watchlist = _load_watchlist()
+    if not watchlist:
+        print("❌ 无法加载自选股池 watchlist.yaml")
+        return []
+
+    if sector:
+        sectors_to_scan = {sector: watchlist.get(sector, {'core': [], 'focus': []})}
+        title = f"自选股池-{sector}板块"
+    else:
+        sectors_to_scan = watchlist
+        title = "全自选股池"
+
+    print(f"📋 开始分析 {title}...")
+    total_core = sum(len(d['core']) for d in sectors_to_scan.values())
+    total_focus = sum(len(d['focus']) for d in sectors_to_scan.values())
+    print(f"   core 标的: {total_core}只 | focus 标的: {total_focus}只")
+    print(f"   数据源: {analyzer.data_adapter.source}")
+    print("-" * 60)
+
+    candidates = []
+    stock_count = 0
+    for sector_name, data in sectors_to_scan.items():
+        all_stocks = data.get('core', []) + data.get('focus', [])
+        tag = '⭐' if data.get('core') else '○'
+        for name, code in all_stocks:
+            stock_count += 1
+            if stock_count % 20 == 0:
+                print(f"  进度: {stock_count}只已分析...")
+            result = analyzer.analyze_stock(code, name)
+            if result and result['score'] >= 70:
+                result['sector'] = sector_name
+                result['is_core'] = (name, code) in data.get('core', [])
+                candidates.append(result)
+                print(f"  ✅ [{tag}{sector_name}] {name}({code}): {result['score']}分")
+
+    candidates.sort(key=lambda x: x['score'], reverse=True)
+    print(f"\n分析完成，共发现 {len(candidates)} 只符合条件的股票")
+    return candidates[:top_n]
 
 
 def print_results(results: List[Dict], title: str = "扫描结果"):
@@ -131,7 +184,10 @@ def main():
     parser.add_argument('--scan', action='store_true', help='扫描全市场')
     parser.add_argument('--stock', type=str, help='分析单只股票')
     parser.add_argument('--name', type=str, help='股票名称')
-    parser.add_argument('--sector', type=str, help='分析板块')
+    parser.add_argument('--sector', type=str, help='分析板块（预定义板块）')
+    parser.add_argument('--pool', type=str, default=None, const='all', nargs='?',
+                       help='分析自选股池（my_stock_pool），可选：板块名或 all（全部）')
+    parser.add_argument('--list-pools', action='store_true', help='列出所有自选股池板块')
     parser.add_argument('--top', type=int, default=20, help='显示前N名')
     parser.add_argument('--source', type=str, default='auto',
                        choices=['auto', 'akshare', 'tushare', 'baostock', 'yfinance'],
@@ -163,6 +219,22 @@ def main():
         # 板块分析
         results = analyze_sector(analyzer, args.sector)
         print_results(results, f"{args.sector}板块分析")
+    
+    elif args.list_pools:
+        watchlist = _load_watchlist()
+        if watchlist:
+            print("📋 自选股池板块列表：")
+            for s, d in watchlist.items():
+                print(f"   {s}: core={len(d.get('core',[]))}, focus={len(d.get('focus',[]))}")
+        else:
+            print("❌ 无法加载自选股池")
+    
+    elif args.pool is not None:
+        if args.pool == 'all':
+            results = analyze_watchlist(analyzer, sector=None, top_n=args.top)
+        else:
+            results = analyze_watchlist(analyzer, sector=args.pool, top_n=args.top)
+        print_results(results, f"自选股池-{args.pool}板块" if args.pool != 'all' else "全自选股池")
     
     elif args.stock:
         # 单只股票分析

@@ -1,0 +1,44 @@
+# sell-monitor/crons/sell-monitor-crons.yaml
+version: "1.0.0"
+description: "卖出实时监控定时任务 - 每个交易日盘中定时运行"
+
+crons:
+  # 上午时段：9:35-11:30，每5分钟
+  - name: "sell-monitor-morning"
+    schedule: "*/5 9,10,11 * * 1-5"
+    tz: "Asia/Shanghai"
+    sessionTarget: "isolated"
+    payload:
+      kind: "agentTurn"
+      message: |
+        运行持仓卖出监控脚本，输出格式化报告。
+        脚本会自动从以下位置读取持仓：
+          ../my_holdings/holdings.json
+
+        执行命令：
+        python3 ~/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/sell-monitor/scripts/monitor.py
+
+        将脚本输出直接发送到当前飞书会话。
+    enabled: true
+
+  # 下午时段：13:00-14:55，每5分钟
+  - name: "sell-monitor-afternoon"
+    schedule: "*/5 13,14 * * 1-5"
+    tz: "Asia/Shanghai"
+    sessionTarget: "isolated"
+    payload:
+      kind: "agentTurn"
+      message: |
+        运行持仓卖出监控脚本，输出格式化报告。
+        脚本会自动从以下位置读取持仓：
+          ../my_holdings/holdings.json
+
+        执行命令：
+        python3 ~/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/sell-monitor/scripts/monitor.py
+
+        将脚本输出直接发送到当前飞书会话。
+    enabled: true
+
+execution:
+  timeout: 120
+  retry: 2

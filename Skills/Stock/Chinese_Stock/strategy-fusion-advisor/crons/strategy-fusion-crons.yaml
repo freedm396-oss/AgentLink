@@ -1,47 +1,59 @@
-# crons/strategy-fusion-crons.yaml
-
+# strategy-fusion-crons.yaml
 version: "1.0.0"
-description: "策略融合投资顾问定时任务"
+description: "融合策略运行器定时任务"
+comment: |
+  14:30 (尾盘买) → 运行 EVENING 策略组
+  16:00 (早盘买) → 运行 MORNING 策略组
+  输出路径：
+    ../recommendations/
+    统一入口: ~/.openclaw/stock/recommendations.json
 
 crons:
-  # 盘后融合推荐 - 16:00
-  - name: "afternoon-fusion-recommendation"
+  # ── 每天 14:30 尾盘买 ──────────────────────────────
+  - name: "fusion-evening-buy"
+    schedule: "30 14 * * 1-5"
+    tz: "Asia/Shanghai"
+    sessionTarget: "isolated"
+    payload:
+      kind: "agentTurn"
+      message: |
+        执行尾盘买策略融合，运行以下策略并输出 top5 推荐：
+        - 缺口填充(gap-fill-strategy)
+        - 涨停回踩(limit-up-retrace-strategy)
+        - MACD底背离(macd-divergence-strategy)
+        - RSI超卖(rsi-oversold-strategy)
+        - 地量见底(volume-extreme-strategy)
+        - 缩量回踩均线(volume-retrace-ma-strategy)
+        - 均线多头(ma-bullish-strategy)
+
+        命令：
+        python3 ~/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/strategy-fusion-advisor/skills/scripts/fusion_runner.py --session EVENING --top 5
+
+        将脚本输出（报告+推荐列表）直接发送到当前飞书会话。
+        推荐写入：../recommendations/YYYYMMDD_EVENING_BUY_recommendation.json
+    enabled: true
+
+  # ── 每天 16:00 早盘买（次日）───────────────────────
+  - name: "fusion-morning-buy"
     schedule: "0 16 * * 1-5"
-    agent: "strategy-fusion-advisor"
+    tz: "Asia/Shanghai"
+    sessionTarget: "isolated"
+    payload:
+      kind: "agentTurn"
+      message: |
+        执行早盘买策略融合（为次日早盘准备），运行以下策略并输出 top5 推荐：
+        - 突破新高(breakout-high-strategy)
+        - 涨停分析/打板(limit-up-analysis)
+        - 业绩超预期(earnings-surprise-strategy)
+        - 早晨之星(morning-star-strategy)
+
+        命令：
+        python3 ~/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/strategy-fusion-advisor/skills/scripts/fusion_runner.py --session MORNING --top 5
+
+        将脚本输出（报告+推荐列表）直接发送到当前飞书会话。
+        推荐写入：../recommendations/YYYYMMDD_MORNING_BUY_recommendation.json
     enabled: true
-    prompt: |
-      收集今日11个策略的推荐股票，
-      进行综合评分计算，
-      输出Top5推荐股票及仓位建议。
-  
-  # 早盘确认 - 9:15
-  - name: "morning-portfolio-confirmation"
-    schedule: "15 9 * * 1-5"
-    agent: "strategy-fusion-advisor"
-    enabled: true
-    prompt: |
-      确认今日投资组合。
-      检查：
-      1. 是否有重大消息影响
-      2. 开盘价是否在合理区间
-      3. 调整买入计划
-  
-  # 周度组合回顾 - 周五16:30
-  - name: "weekly-portfolio-review"
-    schedule: "30 16 * * 5"
-    agent: "strategy-fusion-advisor"
-    enabled: true
-    prompt: |
-      生成本周投资组合回顾报告。
-      包括：
-      1. 组合表现分析
-      2. 策略贡献度
-      3. 下周展望
-      4. 权重调整建议
 
 execution:
   timeout: 600
   retry: 2
-  notification:
-    on_success: true
-    on_failure: true
