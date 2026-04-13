@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-持仓实时监控 - 核心脚本 v3
-基于策略类型的差异化止盈/止损
-三层过滤：技术面 → 消息面 → 宏观确认
-信号类型：减仓 / 加仓 / 持有
+持仓监控 - 简化版 v4
+运行时间：09:20 和 14:30
+逻辑：
+  1. 建仓：在推荐列表中，但不在持仓中
+  2. 减仓：在持仓中，触发止盈或止损条件
+  3. 加仓：同时在持仓和推荐列表中（且未触发止盈）
 """
 
 import os
@@ -12,49 +14,129 @@ import sys
 import json
 import argparse
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set
 
 # ── 代理清除 ───────────────────────────────────────────
 for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
     os.environ.pop(k, None)
 
-import pandas as pd
-import numpy as np
 import akshare as ak
 
-# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
-# monitor.py 位于 Chinese_Stock/sell-monitor/scripts/
-# dirname ×2 → Chinese_Stock/
+# ── 路径设置 ───────────────────────────────────────────
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BASE_DIR = os.path.dirname(os.path.dirname(_SCRIPT_DIR))  # Chinese_Stock/
-DEFAULT_PORTFOLIO_FILE = os.path.join(_BASE_DIR, 'my_holdings', 'portfolio.json')
 
-def _get_latest_holdings_file() -> str:
-    """获取最新的持仓文件（YYYYMMDD_holdings.json）"""
+HOLDINGS_DIR = os.path.join(_BASE_DIR, 'my_holdings')
+RECOMMENDATIONS_DIR = os.path.join(_BASE_DIR, 'recommendations')
+
+# ── 止盈止损配置 ───────────────────────────────────────
+# 基于 buy_reason 的止盈止损参数
+# 包含：固定比例止盈 + 动态回撤止盈
+STOP_LOSS_CONFIG = {
+    'limit_up': {
+        'stop_loss': -7,
+        'profit_levels': [(15, 20), (30, 30), (40, 50), (50, 70), (80, 100)],  # 增加15%第一道防线
+        'max_drawdown': 0.10,  # 从高点回撤10%触发动态止盈
+    },
+    'breakout_high': {
+        'stop_loss': -7,
+        'profit_levels': [(15, 20), (30, 30), (40, 50), (50, 70), (80, 100)],
+        'max_drawdown': 0.10,
+    },
+    'gap_fill': {
+        'stop_loss': -5,
+        'profit_levels': [(10, 30), (15, 50), (20, 50), (30, 70), (40, 100)],
+        'max_drawdown': 0.08,  # 稳健策略回撤8%
+    },
+    'ma_bullish': {
+        'stop_loss': -5,
+        'profit_levels': [(10, 30), (15, 50), (20, 50), (30, 70), (40, 100)],
+        'max_drawdown': 0.08,
+    },
+    'macd_divergence': {
+        'stop_loss': -3,
+        'profit_levels': [(5, 20), (8, 30), (10, 50), (15, 70), (20, 100)],
+        'max_drawdown': 0.05,  # 保守策略回撤5%
+    },
+    'rsi_oversold': {
+        'stop_loss': -3,
+        'profit_levels': [(5, 20), (8, 30), (10, 50), (15, 70), (20, 100)],
+        'max_drawdown': 0.05,
+    },
+    'morning_star': {
+        'stop_loss': -3,
+        'profit_levels': [(5, 20), (8, 30), (10, 50), (15, 70), (20, 100)],
+        'max_drawdown': 0.05,
+    },
+    'volume_extreme': {
+        'stop_loss': -3,
+        'profit_levels': [(5, 20), (8, 30), (10, 50), (15, 70), (20, 100)],
+        'max_drawdown': 0.05,
+    },
+    'a_stock_1430': {
+        'stop_loss': -2,
+        'profit_levels': [(2, 50), (5, 100)],
+        'max_drawdown': 0.03,  # 超短策略回撤3%
+    },
+    'default': {
+        'stop_loss': -5,
+        'profit_levels': [(10, 30), (20, 50), (30, 100)],
+        'max_drawdown': 0.08,
+    },
+}
+
+
+def get_latest_holdings_file() -> str:
+    """获取最新的持仓文件"""
     import glob
-    pattern = os.path.join(_BASE_DIR, 'my_holdings', '*_holdings.json')
+    pattern = os.path.join(HOLDINGS_DIR, '*_holdings.json')
     files = glob.glob(pattern)
     if files:
         return max(files, key=os.path.getmtime)
-    # fallback: 回退到 holdings.json
-    return os.path.join(_BASE_DIR, 'my_holdings', 'holdings.json')
+    return os.path.join(HOLDINGS_DIR, 'holdings.json')
 
-# ── 本地模块 ────────────────────────────────────────────
-sys.path.insert(0, _SCRIPT_DIR)
 
-from indicators import calculate_rsi, calculate_macd, check_volume_anomaly
-from news_sentiment import fetch_news_sentiment
-from market_env import get_market_status
-from strategy_config import (
-    get_strategy_class,
-    get_stop_loss,
-    get_position_size_limit,
-    calculate_profit_take,
-    calculate_stop_loss_action,
-    get_rsi_threshold,
-    STRATEGY_CLASS,
-    MARKET_STATUS_CONFIG,
-)
+def get_latest_recommendation_file() -> Optional[str]:
+    """获取最新的推荐文件"""
+    import glob
+    pattern = os.path.join(RECOMMENDATIONS_DIR, '*_recommendation.json')
+    files = glob.glob(pattern)
+    if files:
+        return max(files, key=os.path.getmtime)
+    return None
+
+
+def load_holdings() -> List[Dict]:
+    """加载持仓数据"""
+    holdings_file = get_latest_holdings_file()
+    if not os.path.exists(holdings_file):
+        return []
+    try:
+        with open(holdings_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[WARN] 加载持仓文件失败: {e}")
+        return []
+
+
+def load_recommendations() -> List[Dict]:
+    """加载推荐列表"""
+    rec_file = get_latest_recommendation_file()
+    if not rec_file or not os.path.exists(rec_file):
+        return []
+    try:
+        with open(rec_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # 处理嵌套格式：{ "recommendations": [...] }
+        if isinstance(data, dict) and 'recommendations' in data:
+            return data['recommendations']
+        # 处理直接数组格式
+        elif isinstance(data, list):
+            return data
+        return []
+    except Exception as e:
+        print(f"[WARN] 加载推荐文件失败: {e}")
+        return []
 
 
 def get_realtime_quote(stock_code: str) -> Optional[Dict]:
@@ -70,8 +152,6 @@ def get_realtime_quote(stock_code: str) -> Optional[Dict]:
             'name': r['名称'],
             'price': float(r['最新价']),
             'change_pct': float(r['涨跌幅']),
-            'volume': float(r['成交量']),
-            'amount': float(r['成交额']),
             'high': float(r['最高']),
             'low': float(r['最低']),
             'open': float(r['今开']),
@@ -82,493 +162,291 @@ def get_realtime_quote(stock_code: str) -> Optional[Dict]:
         return None
 
 
-def get_daily_indicators(stock_code: str) -> Optional[Dict]:
-    """获取日线数据并计算技术指标"""
-    try:
-        end = datetime.now()
-        start = (end - pd.Timedelta(days=60)).strftime('%Y%m%d')
-        df = ak.stock_zh_a_hist(
-            symbol=stock_code,
-            period='daily',
-            start_date=start,
-            end_date=end.strftime('%Y%m%d'),
-            adjust=''
-        )
-        if df is None or len(df) < 30:
-            return None
-        df = df.tail(30).reset_index(drop=True)
-        closes = df['收盘'].astype(float).values
-
-        rsi = calculate_rsi(closes)
-        macd_result = calculate_macd(closes)
-        vol_anomaly = check_volume_anomaly(df)
-
-        recent_high = df['最高'].astype(float).max()
-        price_high_idx = df['最高'].astype(float).idxmax()
-        macd_at_high = macd_result['dif'][price_high_idx] if price_high_idx < len(macd_result['dif']) else None
-
-        return {
-            'rsi': rsi,
-            'macd': macd_result,
-            'volume_anomaly': vol_anomaly,
-            'recent_high': recent_high,
-            'macd_at_high': macd_at_high,
-            'closes': closes,
-        }
-    except Exception as e:
-        print(f"[WARN] 计算 {stock_code} 日线指标失败: {e}")
-        return None
-
-
-def layer1_technical(trade_data: Dict, indicators: Dict) -> Dict:
-    """第一层：技术面触发"""
-    signals = {}
-
-    # RSI
-    rsi = indicators.get('rsi', 50)
-    if rsi > 90:
-        rsi_score = 100
-    elif rsi > 85:
-        rsi_score = 85
-    elif rsi > 80:
-        rsi_score = 70
-    elif rsi > 70:
-        rsi_score = 50
-    else:
-        rsi_score = 0
-
-    # MACD
-    macd_data = indicators.get('macd', {})
-    dif = macd_data.get('dif', 0)
-    dea = macd_data.get('dea', 0)
-    macd_hist = macd_data.get('hist', 0)
-
-    macd_dead_cross = (dif < dea) and (dif > 0) and (dea > 0)
-
-    price_now = trade_data['price']
-    recent_high = indicators.get('recent_high', price_now)
-    macd_at_high = indicators.get('macd_at_high', dif)
-    price_new_high = price_now > recent_high * 0.98
-    macd_not_confirm = (macd_at_high is not None) and (dif < macd_at_high * 0.95)
-    macd_bearish_div = price_new_high and macd_not_confirm
-
-    macd_score = 100 if (macd_dead_cross or macd_bearish_div) else (50 if rsi > 70 else 0)
-
-    # 成交量
-    vol_anomaly = indicators.get('volume_anomaly', 'normal')
-    vol_score = 80 if vol_anomaly == 'high_volume_top' else (60 if vol_anomaly == 'price_up_volume_down' else 0)
-
-    signals['rsi'] = {'value': rsi, 'score': rsi_score}
-    signals['macd'] = {
-        'dif': round(dif, 4), 'dea': round(dea, 4), 'hist': round(macd_hist, 4),
-        'dead_cross': macd_dead_cross, 'bearish_div': macd_bearish_div,
-        'score': macd_score
-    }
-    signals['volume'] = {'status': vol_anomaly, 'score': vol_score}
-    signals['total'] = round(rsi_score * 0.35 + macd_score * 0.30 + vol_score * 0.20 + 0 * 0.15, 2)
-
-    return signals
-
-
-def layer2_news(code: str, name: str) -> Dict:
-    """第二层：消息面确认"""
-    return fetch_news_sentiment(code, name)
-
-
-def layer3_market() -> Dict:
-    """第三层：宏观大盘确认"""
-    return get_market_status()
-
-
-def compute_action(
-    trade_data: Dict,
-    holding: Dict,
-    indicators: Dict,
-    news_signals: Dict,
-    market: Dict
-) -> Dict:
+def calculate_profit_take_action(profit_pct: float, buy_reason: str) -> tuple:
     """
-    综合决策：结合止盈/止损 + 技术信号 + 消息面 + 大盘
-    返回操作建议
+    计算止盈动作
+    返回: (是否触发止盈, 减仓比例, 描述)
     """
+    config = STOP_LOSS_CONFIG.get(buy_reason, STOP_LOSS_CONFIG['default'])
+    profit_levels = config['profit_levels']
+    
+    # 按盈利幅度从高到低检查
+    for level_profit, reduce_pct in reversed(profit_levels):
+        if profit_pct >= level_profit:
+            return True, reduce_pct, f"盈利 {profit_pct:.1f}% ≥ {level_profit}%，建议减仓 {reduce_pct}%"
+    
+    return False, 0, ""
+
+
+def calculate_stop_loss_action(profit_pct: float, buy_reason: str) -> tuple:
+    """
+    计算止损动作
+    返回: (是否触发止损, 描述)
+    """
+    config = STOP_LOSS_CONFIG.get(buy_reason, STOP_LOSS_CONFIG['default'])
+    stop_loss = config['stop_loss']
+    
+    if profit_pct <= stop_loss:
+        return True, f"亏损 {abs(profit_pct):.1f}% 触及止损线 {stop_loss}%，建议清仓"
+    
+    return False, ""
+
+
+def calculate_drawdown_action(current_price: float, high_price: float, buy_price: float, buy_reason: str) -> tuple:
+    """
+    计算动态回撤止盈动作
+    从高点回撤一定比例时触发
+    返回: (是否触发, 描述)
+    """
+    config = STOP_LOSS_CONFIG.get(buy_reason, STOP_LOSS_CONFIG['default'])
+    max_drawdown = config.get('max_drawdown', 0.10)  # 默认10%
+    
+    # 只有盈利状态才检查回撤止盈
+    if current_price <= buy_price:
+        return False, ""
+    
+    # 计算从高点回撤比例
+    if high_price <= buy_price:
+        return False, ""
+    
+    drawdown_pct = (high_price - current_price) / high_price
+    profit_pct = (current_price - buy_price) / buy_price * 100
+    max_profit_pct = (high_price - buy_price) / buy_price * 100
+    
+    # 回撤超过阈值，且曾经有一定盈利（至少5%）
+    if drawdown_pct >= max_drawdown and max_profit_pct >= 5:
+        return True, f"从高点 {max_profit_pct:.1f}% 回撤 {drawdown_pct*100:.1f}%（阈值 {max_drawdown*100:.0f}%），建议减仓保护利润"
+    
+    return False, ""
+
+
+def analyze_position(holding: Dict, current_price: float) -> Dict:
+    """分析单个持仓的交易建议"""
     code = holding['code']
     name = holding['name']
-    buy_price = holding['buy_price']
+    buy_price = holding.get('buy_price', 0)
     buy_reason = holding.get('buy_reason', 'default')
-    strategy_cls = get_strategy_class(buy_reason)
-    strategy_note = STRATEGY_CLASS.get(buy_reason, STRATEGY_CLASS['default'])['note']
-
-    current_price = trade_data['price']
+    high_price = holding.get('high_price', current_price)  # 买入后最高价
+    
+    if buy_price <= 0:
+        return {'code': code, 'signal': '❌ 数据错误', 'reason': '买入价无效'}
+    
     profit_pct = (current_price - buy_price) / buy_price * 100
-    loss_pct = -profit_pct if profit_pct < 0 else 0
-
-    # ── Step 1: 止损检查（优先级最高）─────────────────────
-    stop_action, stop_desc = calculate_stop_loss_action(loss_pct, buy_reason, current_price, buy_price)
-    if stop_action:
+    
+    # 更新最高价（用于动态回撤止盈）
+    if current_price > high_price:
+        high_price = current_price
+    
+    # 1. 先检查止损（优先级最高）
+    is_stop_loss, stop_desc = calculate_stop_loss_action(profit_pct, buy_reason)
+    if is_stop_loss:
         return {
-            'signal': '🚨 止损',
-            'action': stop_desc,
-            'op_pct': int(stop_action * 100),
+            'code': code,
+            'name': name,
+            'signal': '🚨 减仓（止损）',
+            'action': '清仓',
+            'reduce_pct': 100,
+            'current_price': current_price,
             'profit_pct': round(profit_pct, 2),
-            'reason': '硬性止损',
-            'strategy': strategy_note,
-            'rsi': indicators.get('rsi', 0),
+            'reason': stop_desc,
+            'buy_reason': buy_reason,
         }
-
-    # ── Step 2: 止盈检查（盈利优先）───────────────────────
-    rsi = indicators.get('rsi', 50)
-    macd = indicators.get('macd', {})
-    macd_bearish = macd.get('bearish_div', False)
-    macd_dead_cross = macd.get('dead_cross', False)
-
-    sell_pct, profit_desc = calculate_profit_take(profit_pct, buy_reason, rsi)
-
-    if sell_pct > 0:
-        action_desc = f"止盈：{profit_desc}"
-        if macd_bearish or macd_dead_cross:
-            action_desc += ' + MACD见顶信号'
+    
+    # 2. 检查固定比例止盈
+    is_profit_take, reduce_pct, profit_desc = calculate_profit_take_action(profit_pct, buy_reason)
+    if is_profit_take:
         return {
-            'signal': '💰 止盈建议',
-            'action': action_desc,
-            'op_pct': int(sell_pct * 100),
+            'code': code,
+            'name': name,
+            'signal': '💰 减仓（止盈）',
+            'action': f'减仓 {reduce_pct}%',
+            'reduce_pct': reduce_pct,
+            'current_price': current_price,
             'profit_pct': round(profit_pct, 2),
-            'reason': f'盈利{profit_pct:.1f}%，{strategy_note}',
-            'strategy': strategy_note,
-            'rsi': rsi,
+            'reason': profit_desc,
+            'buy_reason': buy_reason,
         }
-
-    # ── Step 3: 加仓信号（仅保守/稳健策略）────────────────
-    if strategy_cls in ('conservative', 'moderate'):
-        vol_status = indicators.get('volume', {}).get('status', 'normal')
-        volume_shrink = vol_status in ['price_up_volume_down']
-        price_stabilizing = abs(trade_data['change_pct']) < 1.5
-
-        if rsi < 30 and volume_shrink and price_stabilizing and loss_pct > 0:
-            if loss_pct > 8:
-                return {
-                    'signal': '🟢 强烈加仓',
-                    'action': f'浮亏{loss_pct:.1f}%+RSI<30+缩量，加仓摊薄成本',
-                    'op_pct': -50,
-                    'profit_pct': round(profit_pct, 2),
-                    'reason': f'认可{strategy_note}逻辑，下跌加仓',
-                    'strategy': strategy_note,
-                    'rsi': rsi,
-                }
-            elif loss_pct > 3:
-                return {
-                    'signal': '🟢 加仓',
-                    'action': f'浮亏{loss_pct:.1f}%+RSI<30，适量加仓',
-                    'op_pct': -30,
-                    'profit_pct': round(profit_pct, 2),
-                    'reason': f'{strategy_note}，回调加仓',
-                    'strategy': strategy_note,
-                    'rsi': rsi,
-                }
-
-        # 趋势确认加仓（浮盈 + 趋势良好）
-        if 50 <= rsi <= 65 and profit_pct > 5 and not macd_dead_cross:
-            if profit_pct <= 15:
-                return {
-                    'signal': '🟢 趋势加仓',
-                    'action': f'浮盈{profit_pct:.1f}%+RSI适中，适度加仓',
-                    'op_pct': -20,
-                    'profit_pct': round(profit_pct, 2),
-                    'reason': f'{strategy_note}趋势确认',
-                    'strategy': strategy_note,
-                    'rsi': rsi,
-                }
-
-    # ── Step 4: 减仓信号（无盈利时看RSI/MACD）─────────────
-    # 获取该策略的RSI阈值（已在顶层导入 get_rsi_threshold）
-    rsi_threshold_warning = get_rsi_threshold(buy_reason)  # 触发减仓警告的RSI值
-    rsi_threshold_attention = rsi_threshold_warning - 5  # 轻度注意的RSI值（比警告低5）
-
-    if rsi > rsi_threshold_warning or (rsi > rsi_threshold_attention and (macd_bearish or macd_dead_cross)):
+    
+    # 3. 检查动态回撤止盈（从高点回撤）
+    drawdown_action, drawdown_desc = calculate_drawdown_action(current_price, high_price, buy_price, buy_reason)
+    if drawdown_action:
         return {
-            'signal': '🔴 减仓警告',
-            'action': f'RSI={rsi:.1f}（>{rsi_threshold_warning:.0f}），{"MACD顶背离" if macd_bearish else "MACD死叉"}',
-            'op_pct': 30,
+            'code': code,
+            'name': name,
+            'signal': '💰 减仓（回撤止盈）',
+            'action': '减仓 50%',
+            'reduce_pct': 50,
+            'current_price': current_price,
             'profit_pct': round(profit_pct, 2),
-            'reason': f'{strategy_note}，但RSI过高',
-            'strategy': strategy_note,
-            'rsi': rsi,
+            'reason': drawdown_desc,
+            'buy_reason': buy_reason,
         }
-
-    if rsi > rsi_threshold_attention:
-        return {
-            'signal': '🟡 轻度注意',
-            'action': f'RSI={rsi:.1f}（>{rsi_threshold_attention:.0f}），关注是否转空',
-            'op_pct': 0,
-            'profit_pct': round(profit_pct, 2),
-            'reason': 'RSI偏高，继续持有需密切关注',
-            'strategy': strategy_note,
-            'rsi': rsi,
-        }
-
-    # ── Step 5: 继续持有 ─────────────────────────────────
+    
+    # 4. 未触发任何信号，返回持有状态
     return {
-        'signal': '🟢 继续持有',
-        'action': '暂无特殊信号，安心持有',
-        'op_pct': 0,
+        'code': code,
+        'name': name,
+        'signal': '🟢 持有',
+        'action': '继续持有',
+        'reduce_pct': 0,
+        'current_price': current_price,
         'profit_pct': round(profit_pct, 2),
-        'reason': f'{strategy_note}，状态正常',
-        'strategy': strategy_note,
-        'rsi': rsi,
+        'reason': f'浮盈 {profit_pct:.1f}%，未达到止盈/止损条件',
+        'buy_reason': buy_reason,
     }
 
 
-def calculate_portfolio_overview(holdings: List[Dict], results: Dict, market_status: str = 'neutral') -> Dict:
-    """
-    计算持仓组合概览
-    market_status: strong / bullish / neutral / bearish / weak
-    """
-    from strategy_config import MARKET_STATUS_CONFIG
-
-    # 计算当前总仓位（按成本价估算）
-    total_cost = sum(h.get('position_value', 0) for h in holdings)
-    total_value = sum(results.get(h['code'], {}).get('price', h['buy_price']) * h.get('shares', 0) for h in holdings)
-
-    # 按成本计算仓位占比（假设position_ratio已记录在持仓中）
-    current_position_ratio = sum(h.get('position_ratio', 0) for h in holdings)
-
-    # 大盘允许的总仓位
-    max_total_ratio = MARKET_STATUS_CONFIG.get(market_status, 0.50)
-
-    # 可用仓位
-    available_ratio = max(0, max_total_ratio - current_position_ratio)
-
-    # 账户盈亏
-    if total_cost > 0:
-        profit_pct = (total_value - total_cost) / total_cost * 100
-    else:
-        profit_pct = 0.0
-
-    # 各策略类型统计
-    by_strategy = {}
-    for h in holdings:
-        reason = h.get('buy_reason', 'default')
-        cls = get_strategy_class(reason)
-        by_strategy[cls] = by_strategy.get(cls, 0) + h.get('position_ratio', 0)
-
-    return {
-        'holdings_count': len(holdings),
-        'current_position_ratio': round(current_position_ratio * 100, 1),
-        'max_total_ratio': round(max_total_ratio * 100, 1),
-        'available_ratio': round(available_ratio * 100, 1),
-        'profit_pct': round(profit_pct, 2),
-        'market_status': market_status,
-        'by_strategy': {k: round(v * 100, 1) for k, v in by_strategy.items()},
-    }
-
-
-def generate_portfolio_block(overview: Dict) -> str:
-    """生成账户总览区块"""
+def generate_report(
+    holdings: List[Dict],
+    recommendations: List[Dict],
+    position_signals: Dict[str, Dict],
+    current_time: str
+) -> str:
+    """生成交易建议报告"""
     lines = []
-    status_emoji = {
-        'strong': '🟢',
-        'bullish': '🟡',
-        'neutral': '🟡',
-        'bearish': '🟠',
-        'weak': '🔴',
-    }
-    status_text = {
-        'strong': '强势',
-        'bullish': '震荡偏多',
-        'neutral': '震荡',
-        'bearish': '震荡偏空',
-        'weak': '弱势',
-    }
-
-    emoji = status_emoji.get(overview['market_status'], '🟡')
-    status = status_text.get(overview['market_status'], '震荡')
-
-    lines.append(f"📊 账户总览  {emoji} 大盘：{status}")
-    lines.append(f"总仓位：{overview['current_position_ratio']}%  /  上限：{overview['max_total_ratio']}%")
-    lines.append(f"可用仓位：{overview['available_ratio']}%  |  持仓股票：{overview['holdings_count']}只")
-
-    # 按策略类型显示仓位
-    if overview['by_strategy']:
-        strat_parts = []
-        for cls, ratio in sorted(overview['by_strategy'].items()):
-            strat_parts.append(f"{cls}:{ratio}%")
-        lines.append(f"仓位分布：{', '.join(strat_parts)}")
-
-    # 整体盈亏
-    profit = overview['profit_pct']
-    if profit >= 0:
-        lines.append(f"持仓组合盈亏：{'+' if profit >= 0 else ''}{profit}%")
-    else:
-        lines.append(f"持仓组合盈亏：🔴{profit}%")
-
-    return '  '.join(lines)
-
-
-def generate_report(holdings: List[Dict], results: Dict, current_time: str, market_status: str = 'neutral') -> str:
-    """生成格式化监控报告"""
-    lines = []
-    lines.append(f"🕐 {current_time} 持仓监控报告")
-    lines.append("=" * 52)
-
-    # 账户总览
-    overview = calculate_portfolio_overview(holdings, results, market_status)
-    lines.append(generate_portfolio_block(overview))
+    lines.append(f"🕐 {current_time} 交易建议报告")
+    lines.append("=" * 60)
+    
+    # 构建集合
+    holding_codes = {h['code'] for h in holdings}
+    rec_codes = {r['code'] for r in recommendations}
+    
+    # 分类
+    build_positions = []  # 建仓：在推荐中，不在持仓中
+    add_positions = []    # 加仓：同时在持仓和推荐中
+    reduce_positions = [] # 减仓：在持仓中，触发止盈/止损
+    hold_positions = []   # 持有：在持仓中，未触发交易信号
+    
+    for rec in recommendations:
+        code = rec['code']
+        if code not in holding_codes:
+            build_positions.append(rec)
+        elif code in position_signals:
+            signal = position_signals[code]
+            if '减仓' in signal['signal']:
+                # 触发减仓，不加入加仓列表
+                reduce_positions.append(signal)
+            else:
+                add_positions.append({**rec, **signal})
+    
+    for code, signal in position_signals.items():
+        if '减仓' in signal['signal'] and code not in [r['code'] for r in reduce_positions]:
+            reduce_positions.append(signal)
+        elif code not in rec_codes and signal['signal'] == '🟢 持有':
+            hold_positions.append(signal)
+    
+    # 输出汇总
+    lines.append(f"\n📊 汇总")
+    lines.append(f"  建仓机会：{len(build_positions)} 只")
+    lines.append(f"  加仓机会：{len(add_positions)} 只")
+    lines.append(f"  减仓信号：{len(reduce_positions)} 只")
+    lines.append(f"  继续持有：{len(hold_positions)} 只")
     lines.append("")
-
-    # 信号汇总
-    total = len(holdings)
-    sell_signals = sum(1 for r in results.values() if '止盈' in r.get('signal', '') or '减仓' in r.get('signal', '') or '止损' in r.get('signal', ''))
-    add_signals = sum(1 for r in results.values() if '加仓' in r.get('signal', ''))
-    hold_signals = total - sell_signals - add_signals
-
-    lines.append(f"持仓股票：{total}只  |  {add_signals}个加仓  |  {sell_signals}个减仓/止损  |  {hold_signals}个持有")
-    lines.append("")
-
-    for h in holdings:
-        code = h['code']
-        name = h['name']
-        buy_price = h['buy_price']
-        r = results.get(code, {})
-
-        current_price = r.get('price', 0)
-        change_pct = r.get('change_pct', 0)
-        profit_pct = r.get('profit_pct', 0)
-        strategy = r.get('strategy', '未知')
-
-        lines.append("━" * 52)
-        sig = r.get('signal', '数据获取中')
-        emoji = '📌' if sig.startswith('🟢') else '⚠️'
-        lines.append(f"{emoji} {name}({code})  [{strategy}]")
-        lines.append(f"   现价: {current_price}  |  今日涨跌: {change_pct:+.2f}%  |  浮盈亏: {profit_pct:+.2f}%")
-        lines.append(f"   持仓成本: {buy_price}  |  {'+' if profit_pct >= 0 else ''}{profit_pct:.2f}%")
-
-        lines.append(f"\n   信号: {sig}")
-        lines.append(f"   RSI(14): {r.get('rsi', 'N/A'):.1f}" if isinstance(r.get('rsi'), (int, float)) else f"   RSI(14): N/A")
-
-        macd = r.get('technical', {}).get('macd', {}) if isinstance(r.get('technical'), dict) else {}
-        if macd.get('dead_cross'):
-            lines.append(f"   MACD: 🔴高位死叉")
-        elif macd.get('bearish_div'):
-            lines.append(f"   MACD: 🔴顶背离")
-        else:
-            lines.append(f"   MACD: DIF={macd.get('dif', 0):.2f} DEA={macd.get('dea', 0):.2f}")
-
-        vol = r.get('technical', {}).get('volume', {}).get('status', 'N/A') if isinstance(r.get('technical'), dict) else 'N/A'
-        lines.append(f"   成交量: {vol}")
-
-        action = r.get('action', '暂无建议')
-        op_pct = r.get('op_pct', 0)
-        if op_pct > 0:
-            lines.append(f"\n   ▶️ 建议: {action}（减仓 {op_pct}%）")
-        elif op_pct < 0:
-            lines.append(f"\n   ▶️ 建议: {action}（加仓 {abs(op_pct)}%）")
-        else:
-            lines.append(f"\n   ▶️ 建议: {action}")
-
-        lines.append(f"   理由: {r.get('reason', '')}")
-
-    lines.append("\n" + "=" * 52)
+    
+    # 建仓建议
+    if build_positions:
+        lines.append("━" * 60)
+        lines.append("📈 【建仓建议】在推荐列表中，尚未持仓")
+        lines.append("")
+        for rec in build_positions:
+            lines.append(f"  ▶ {rec.get('name', rec['code'])} ({rec['code']})")
+            lines.append(f"    推荐理由: {rec.get('reason', rec.get('source', 'N/A'))}")
+            if 'entry_price' in rec:
+                lines.append(f"    建议买入价: ¥{rec['entry_price']}")
+            lines.append("")
+    
+    # 加仓建议
+    if add_positions:
+        lines.append("━" * 60)
+        lines.append("📈 【加仓建议】同时在持仓和推荐列表中")
+        lines.append("")
+        for pos in add_positions:
+            lines.append(f"  ▶ {pos.get('name', pos['code'])} ({pos['code']})")
+            lines.append(f"    当前价: ¥{pos['current_price']} | 浮盈: {pos['profit_pct']:+.1f}%")
+            lines.append(f"    推荐理由: {pos.get('recommend_reason', pos.get('source', 'N/A'))}")
+            lines.append("")
+    
+    # 减仓建议
+    if reduce_positions:
+        lines.append("━" * 60)
+        lines.append("📉 【减仓建议】触发止盈或止损条件")
+        lines.append("")
+        for pos in reduce_positions:
+            emoji = '🚨' if '止损' in pos['signal'] else '💰'
+            lines.append(f"  {emoji} {pos.get('name', pos['code'])} ({pos['code']})")
+            lines.append(f"    当前价: ¥{pos['current_price']} | 浮盈: {pos['profit_pct']:+.1f}%")
+            lines.append(f"    操作: {pos['action']}")
+            lines.append(f"    理由: {pos['reason']}")
+            lines.append("")
+    
+    # 持有建议
+    if hold_positions:
+        lines.append("━" * 60)
+        lines.append("🟢 【继续持有】未达到交易条件")
+        lines.append("")
+        for pos in hold_positions:
+            lines.append(f"  • {pos.get('name', pos['code'])} ({pos['code']})")
+            lines.append(f"    当前价: ¥{pos['current_price']} | 浮盈: {pos['profit_pct']:+.1f}%")
+            lines.append(f"    理由: {pos['reason']}")
+            lines.append("")
+    
+    lines.append("=" * 60)
     lines.append("⚠️ 仅供参考，不构成投资建议")
+    
     return '\n'.join(lines)
 
 
-def monitor_holdings(holdings: List[Dict]) -> Dict:
-    """主监控逻辑"""
-    results = {}
-    market = layer3_market()
-
-    for h in holdings:
-        code = h['code']
-        name = h['name']
-
-        trade_data = get_realtime_quote(code)
-        if not trade_data:
-            results[code] = {'error': '获取行情失败'}
-            continue
-
-        indicators = get_daily_indicators(code)
-        news_signals = layer2_news(code, name)
-
-        action_result = compute_action(trade_data, h, indicators or {}, news_signals, market)
-
-        results[code] = {
-            'price': trade_data['price'],
-            'change_pct': trade_data['change_pct'],
-            'technical': indicators or {},
-            'news': news_signals,
-            'market': market,
-            **action_result,
-        }
-
-    return results
-
-
-def load_portfolio_config() -> dict:
-    """加载组合配置文件（手动覆盖）"""
-    default = {'market_status': None}  # None表示自动判断
-    if not os.path.exists(DEFAULT_PORTFOLIO_FILE):
-        return default
-    try:
-        with open(DEFAULT_PORTFOLIO_FILE) as f:
-            cfg = json.load(f)
-        return cfg
-    except Exception:
-        return default
-
-
 def main():
-    parser = argparse.ArgumentParser(description='持仓实时监控 v3')
-    parser.add_argument('--holdings', type=str, help='持仓JSON字符串')
-    parser.add_argument('--holdings-file', type=str, help='持仓文件路径(JSON)')
-    parser.add_argument('--market-status', type=str, choices=['strong','bullish','neutral','bearish','weak'],
-                        help='大盘状态（strong/bullish/neutral/bearish/weak），覆盖自动判断')
+    parser = argparse.ArgumentParser(description='持仓监控 - 简化版 v4')
+    parser.add_argument('--holdings-file', type=str, help='持仓文件路径')
+    parser.add_argument('--rec-file', type=str, help='推荐文件路径')
     args = parser.parse_args()
-
-    # 加载持仓
-    if args.holdings:
-        holdings = json.loads(args.holdings)
-    elif args.holdings_file:
-        with open(args.holdings_file) as f:
-            holdings = json.load(f)
-    else:
-        holdings_file = _get_latest_holdings_file()
-        if os.path.exists(holdings_file):
-            with open(holdings_file) as f:
-                holdings = json.load(f)
-        else:
-            print("❌ 未找到持仓文件，请先录入：")
-            print("   python3 Chinese_Stock/my_holdings/scripts/holdings_editor.py")
-            return
-
-    if not holdings:
-        print("🟢 持仓为空，无需监控")
+    
+    print(f"🔍 开始分析持仓与推荐...")
+    print(f"   时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 加载数据
+    holdings = load_holdings()
+    recommendations = load_recommendations()
+    
+    print(f"   持仓数量: {len(holdings)} 只")
+    print(f"   推荐数量: {len(recommendations)} 只")
+    
+    if not holdings and not recommendations:
+        print("\n🟢 持仓和推荐均为空，无需分析")
         return
-
-    # ── 大盘状态：优先用手动指定，其次用配置文件，最后自动判断 ───
-    portfolio_config = load_portfolio_config()
-    manual_status = args.market_status or portfolio_config.get('market_status')
-
-    if manual_status:
-        market_status = manual_status
-        print(f"🔍 开始监控 {len(holdings)} 只持仓股票...")
-        print(f"   时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"   大盘状态: {market_status} （手动设置）")
-    else:
-        print(f"🔍 开始监控 {len(holdings)} 只持仓股票...")
-        print(f"   时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"   正在自动判断大盘状态...")
-        from market_env import auto_market_status
-        market_status = auto_market_status()
-        print(f"   大盘状态: {market_status} （自动判断）")
-
-    results = monitor_holdings(holdings)
+    
+    # 分析持仓
+    position_signals = {}
+    for holding in holdings:
+        code = holding['code']
+        quote = get_realtime_quote(code)
+        if quote:
+            signal = analyze_position(holding, quote['price'])
+            position_signals[code] = signal
+        else:
+            position_signals[code] = {
+                'code': code,
+                'name': holding.get('name', code),
+                'signal': '❌ 数据错误',
+                'reason': '获取行情失败'
+            }
+    
+    # 生成报告
     current_time = datetime.now().strftime('%H:%M')
-    report = generate_report(holdings, results, current_time, market_status)
-    print(report)
-
+    report = generate_report(holdings, recommendations, position_signals, current_time)
+    print("\n" + report)
+    
     # 保存结果
+    output = {
+        'time': datetime.now().isoformat(),
+        'holdings_count': len(holdings),
+        'recommendations_count': len(recommendations),
+        'signals': position_signals,
+    }
     output_path = '/tmp/sell_monitor_last_run.json'
-    with open(output_path, 'w') as f:
-        json.dump({'time': datetime.now().isoformat(), 'results': results}, f, ensure_ascii=False, indent=2)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"\n📄 结果已保存至 {output_path}")
 
 
