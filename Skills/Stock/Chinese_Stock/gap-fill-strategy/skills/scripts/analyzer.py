@@ -6,9 +6,19 @@
 识别和分析突破性缺口及回踩买入机会
 """
 
-import sys
 import os
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/gap-fill-strategy')
+import sys
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import pandas as pd
 import numpy as np
@@ -21,7 +31,7 @@ warnings.filterwarnings('ignore')
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/gap-fill-strategy')
+    # sys.path dynamically set below
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 

@@ -1,0 +1,86 @@
+{
+  "date": "20260417",
+  "session": "EVENING_BUY",
+  "generated_at": "2026-04-17T23:13:53.471488",
+  "recommendations": [
+    {
+      "code": "002384",
+      "name": "东山精密",
+      "source": "缺口填充",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "技术面强烈看涨，综合得分82；缺口填充信号确认；所属板块：PCB；尾盘低位吸纳，次日冲高概率大",
+      "combined_score": 81.76,
+      "best_score": 91.0,
+      "strategies": [
+        "缺口填充"
+      ],
+      "position_pct": 21.2,
+      "sectors": [
+        "PCB"
+      ],
+      "session": "EVENING_BUY",
+      "weight": 0.2118
+    },
+    {
+      "code": "002364",
+      "name": "中恒电气",
+      "source": "缺口填充",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "技术面强烈看涨，综合得分81；缺口填充信号确认；所属板块：电网与电力；尾盘低位吸纳，次日冲高概率大",
+      "combined_score": 81.4,
+      "best_score": 89.5,
+      "strategies": [
+        "缺口填充"
+      ],
+      "position_pct": 18.1,
+      "sectors": [
+        "电网与电力",
+        "AI算力"
+      ],
+      "session": "EVENING_BUY",
+      "weight": 0.1814
+    },
+    {
+      "code": "601069",
+      "name": "西部黄金",
+      "source": "缺口填充",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "技术面强烈看涨，综合得分81；缺口填充信号确认；所属板块：贵金属；尾盘低位吸纳，次日冲高概率大",
+      "combined_score": 80.78,
+      "best_score": 89.0,
+      "strategies": [
+        "缺口填充"
+      ],
+      "position_pct": 15.1,
+      "sectors": [
+        "贵金属"
+      ],
+      "session": "EVENING_BUY",
+      "weight": 0.1508
+    },
+    {
+      "code": "300139",
+      "name": "晓程科技",
+      "source": "缺口填充",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "技术面强烈看涨，综合得分80；缺口填充信号确认；所属板块：贵金属；尾盘低位吸纳，次日冲高概率大",
+      "combined_score": 80.04,
+      "best_score": 88.0,
+      "strategies": [
+        "缺口填充"
+      ],
+      "position_pct": 12.0,
+      "sectors": [
+        "贵金属"
+      ],
+      "session": "EVENING_BUY",
+      "weight": 0.12
+    }
+  ],
+  "total_position": 66.4,
+  "stock_count": 4
+}

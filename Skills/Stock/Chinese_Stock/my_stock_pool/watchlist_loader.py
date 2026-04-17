@@ -18,7 +18,7 @@ DEFAULT_WATCHLIST_PATH = os.path.join(
 
 # 也尝试相对路径
 ALT_WATCHLIST_PATHS = [
-    '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/my_stock_pool/watchlist.yaml',
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), 'my_stock_pool', 'watchlist.yaml'),
     os.path.expanduser('~/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/my_stock_pool/watchlist.yaml'),
 ]
 
@@ -29,7 +29,7 @@ def find_watchlist_path() -> str:
         if os.path.exists(path):
             return path
     # 尝试相对于当前文件的位置
-    base = '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock'
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Chinese_Stock
     candidate = os.path.join(base, 'my_stock_pool', 'watchlist.yaml')
     if os.path.exists(candidate):
         return candidate

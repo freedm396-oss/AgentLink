@@ -1,16 +1,23 @@
-# skills/scripts/morning_star_analyzer.py
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 早晨之星形态分析器
 识别和分析早晨之星K线组合形态
 """
 
-import sys
 import os
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/morning-star-strategy')
+import sys
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # .../skills/scripts
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)  # .../skills
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)  # .../<strategy-name>
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)  # .../Chinese_Stock
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import pandas as pd
 import numpy as np
@@ -23,7 +30,8 @@ warnings.filterwarnings('ignore')
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/morning-star-strategy')
+    if _SCRIPT_DIR not in sys.path:
+        sys.path.insert(0, _SCRIPT_DIR)
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 
@@ -36,234 +44,247 @@ class MorningStarAnalyzer:
         self.win_rate = 0.62
         
         # 形态参数
-        self.first_candle_min_decline = 3.0    # 第一根阴线最小跌幅
-        self.second_candle_max_body_ratio = 0.2  # 第二根十字星最大实体比例
-        self.third_candle_min_advance = 3.0    # 第三根阳线最小涨幅
+        self.body_ratio_threshold = 0.6  # 实体占比阈值
+        self.shadow_ratio_threshold = 0.3  # 影线占比阈值
         
         # 评分权重
         self.weights = {
-            'pattern_completeness': 0.35,
-            'position_confirmation': 0.25,
-            'volume_confirmation': 0.20,
-            'follow_up_confirmation': 0.20
+            'pattern_quality': 0.30,
+            'volume_confirm': 0.25,
+            'trend_context': 0.20,
+            'position_quality': 0.15,
+            'market_environment': 0.10
         }
         
-        # 初始化数据源
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源")
+
+    def is_bearish_candle(self, row: pd.Series) -> bool:
+        """判断是否阴线"""
+        return row['close'] < row['open']
+
+    def is_bullish_candle(self, row: pd.Series) -> bool:
+        """判断是否阳线"""
+        return row['close'] > row['open']
+
+    def get_body_size(self, row: pd.Series) -> float:
+        """获取实体大小"""
+        return abs(row['close'] - row['open'])
+
+    def get_upper_shadow(self, row: pd.Series) -> float:
+        """获取上影线"""
+        return max(row['open'], row['close']) - row['high']
+
+    def get_lower_shadow(self, row: pd.Series) -> float:
+        """获取下影线"""
+        return row['low'] - min(row['open'], row['close'])
+
+    def find_morning_star(self, df: pd.DataFrame) -> List[Dict]:
+        """查找早晨之星形态"""
+        if len(df) < 4:
+            return []
         
+        patterns = []
+        
+        for i in range(2, len(df)):
+            # 第三天：阳线，收盘价显著上涨
+            day3 = df.iloc[i]
+            if not self.is_bullish_candle(day3):
+                continue
+            
+            body3 = self.get_body_size(day3)
+            total_range3 = day3['high'] - day3['low']
+            
+            if total_range3 <= 0:
+                continue
+            
+            body_ratio3 = body3 / total_range3
+            
+            # 第二天：星线，实体小，有上下影线
+            day2 = df.iloc[i-1]
+            body2 = self.get_body_size(day2)
+            total_range2 = day2['high'] - day2['low']
+            
+            if total_range2 <= 0:
+                continue
+            
+            body_ratio2 = body2 / total_range2
+            
+            # 判断星线特征：实体小（<30%），下影线明显
+            if body_ratio2 > 0.4:  # 实体太大，不是星线
+                continue
+            
+            lower_shadow2 = self.get_lower_shadow(day2)
+            upper_shadow2 = self.get_upper_shadow(day2)
+            
+            if lower_shadow2 < total_range2 * 0.2:  # 下影线不够
+                continue
+            
+            # 第一天：阴线，明显的下跌趋势
+            day1 = df.iloc[i-2]
+            if not self.is_bearish_candle(day1):
+                continue
+            
+            body1 = self.get_body_size(day1)
+            total_range1 = day1['high'] - day1['low']
+            
+            if total_range1 <= 0:
+                continue
+            
+            body_ratio1 = body1 / total_range1
+            
+            # 验证：第三天阳线实体要明显
+            if body_ratio3 < 0.5:
+                continue
+            
+            # 验证：第一天和第三天的涨跌差
+            price_change = (day3['close'] - day1['open']) / day1['open']
+            
+            if price_change < 0.02:  # 反弹幅度太小
+                continue
+            
+            # 早晨之星确认
+            patterns.append({
+                'index': i,
+                'date': df.index[i] if hasattr(df.index[i], 'strftime') else str(df.index[i]),
+                'pattern_type': 'morning_star',
+                'day1_open': day1['open'],
+                'day1_close': day1['close'],
+                'day2_low': day2['low'],
+                'day3_close': day3['close'],
+                'day3_open': day3['open'],
+                'price_recovery': price_change * 100,
+                'body_ratio3': body_ratio3
+            })
+        
+        return patterns
+
+    def calculate_score(self, df: pd.DataFrame, pattern: Dict) -> Tuple[float, str]:
+        """计算评分"""
+        score = 0
+        reasons = []
+        
+        # 1. 形态质量得分 (0-30)
+        body_ratio3 = pattern['body_ratio3']
+        if body_ratio3 > 0.8:
+            score += 30
+            reasons.append("第三天阳线实体饱满")
+        elif body_ratio3 > 0.6:
+            score += 25
+            reasons.append("第三天阳线实体较大")
+        else:
+            score += 20
+            reasons.append("早晨之星形态完整")
+        
+        # 2. 反弹幅度得分 (0-25)
+        recovery = pattern['price_recovery']
+        if recovery > 5:
+            score += 25
+            reasons.append(f"反弹幅度大({recovery:.1f}%)")
+        elif recovery > 3:
+            score += 20
+            reasons.append(f"反弹幅度良好({recovery:.1f}%)")
+        elif recovery > 2:
+            score += 15
+            reasons.append(f"反弹幅度一般({recovery:.1f}%)")
+        
+        # 3. 量能确认得分 (0-20)
+        if pattern['index'] < len(df) - 1:
+            vol_today = df.iloc[pattern['index']]['volume']
+            vol_ma = df['volume'].rolling(window=20).mean().iloc[pattern['index']]
+            vol_ratio = vol_today / vol_ma if vol_ma > 0 else 1
+            
+            if vol_ratio > 1.5:
+                score += 20
+                reasons.append("成交量放大配合")
+            elif vol_ratio > 1.2:
+                score += 15
+                reasons.append("成交量温和放大")
+            elif vol_ratio > 1.0:
+                score += 10
+                reasons.append("成交量有所放大")
+        
+        # 4. 趋势背景得分 (0-15)
+        if pattern['index'] >= 5:
+            # 检查之前是否是下跌趋势
+            price_start = df.iloc[pattern['index']-5]['close']
+            price_mid = df.iloc[pattern['index']-2]['close']
+            price_end = df.iloc[pattern['index']]['close']
+            
+            if price_mid < price_start and price_end > price_mid:
+                score += 15
+                reasons.append("下跌后反弹，形态标准")
+            else:
+                score += 8
+                reasons.append("形态有效")
+        
+        # 5. 市场环境得分 (0-10)
+        score += 10
+        
+        return score, "; ".join(reasons)
+
     def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
-        """分析单只股票是否出现早晨之星"""
+        """分析单只股票"""
         try:
-            # 获取数据
-            df = self._get_stock_data(stock_code)
-            if df is None or len(df) < 20:
+            df = self.data_adapter.get_stock_history(stock_code)
+            if df is None or len(df) < 30:
                 return None
             
-            # 计算指标
-            df = self._calculate_indicators(df)
+            df = self.data_adapter.normalize_columns(df)
             
-            # 查找早晨之星
-            pattern = self._find_morning_star(df)
-            if not pattern['is_morning_star']:
+            patterns = self.find_morning_star(df)
+            
+            if not patterns:
                 return None
             
-            # 计算评分
-            score = self._calculate_score(pattern, df)
+            pattern = patterns[-1]
+            score, reasons = self.calculate_score(df, pattern)
             
-            # 生成信号
-            signal = '强烈买入' if score >= 85 else '买入' if score >= 75 else '观望'
-            
-            latest = df.iloc[-1]
+            current = df.iloc[-1]
             
             return {
-                'stock_code': stock_code,
-                'stock_name': stock_name or stock_code,
-                'signal': signal,
-                'score': round(score, 2),
-                'current_price': round(latest['close'], 2),
-                'pattern_date': pattern['date'],
-                'first_candle_decline': round(pattern['first_decline'], 2),
-                'third_candle_advance': round(pattern['third_advance'], 2),
-                'volume_confirmation': pattern['volume_ok'],
-                'position': pattern['position'],
-                'details': pattern
+                'code': stock_code,
+                'name': stock_name or stock_code,
+                'score': score,
+                'reasons': reasons,
+                'current_price': round(current['close'], 2),
+                'price_recovery': round(pattern['price_recovery'], 2),
+                'pattern_type': '早晨之星',
+                'strategy': self.name,
+                'win_rate': self.win_rate
             }
             
         except Exception as e:
-            print(f"分析{stock_code}失败: {e}")
             return None
-    
-    def _get_stock_data(self, stock_code: str) -> Optional[pd.DataFrame]:
-        """获取股票历史数据"""
-        try:
-            df = self.data_adapter.get_stock_data(stock_code)
-            if df is None or df.empty:
-                return None
-            return df
-        except Exception as e:
-            print(f"获取{stock_code}数据失败: {e}")
-            return None
-    
-    def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """计算技术指标"""
-        # 计算K线实体和影线
-        df['body'] = abs(df['close'] - df['open'])
-        df['upper_shadow'] = df['high'] - df[['open', 'close']].max(axis=1)
-        df['lower_shadow'] = df[['open', 'close']].min(axis=1) - df['low']
-        df['total_range'] = df['high'] - df['low']
+
+    def batch_analyze(self, stock_list: List[tuple], top_n: int = 10) -> List[Dict]:
+        """批量分析"""
+        results = []
         
-        # 计算涨跌幅
-        df['change_pct'] = df['close'].pct_change() * 100
-        
-        # 计算成交量均线
-        df['volume_ma5'] = df['volume'].rolling(window=5).mean()
-        
-        # 计算均线
-        df['MA5'] = df['close'].rolling(window=5).mean()
-        df['MA10'] = df['close'].rolling(window=10).mean()
-        df['MA20'] = df['close'].rolling(window=20).mean()
-        
-        return df
-    
-    def _find_morning_star(self, df: pd.DataFrame) -> Dict:
-        """查找早晨之星形态"""
-        if len(df) < 5:
-            return {'is_morning_star': False}
-        
-        # 检查最近3根K线
-        for i in range(len(df) - 3, len(df) - 2):
-            if i < 2:
+        for name, code in stock_list:
+            try:
+                result = self.analyze_stock(code, name)
+                if result and result['score'] > 0:
+                    results.append(result)
+            except Exception:
                 continue
-            
-            first = df.iloc[i - 2]   # 第一根：大阴线
-            second = df.iloc[i - 1]  # 第二根：十字星
-            third = df.iloc[i]       # 第三根：大阳线
-            
-            # 检查第一根K线（大阴线）
-            first_is_bearish = first['close'] < first['open']
-            first_decline = (first['open'] - first['close']) / first['open'] * 100
-            first_is_large = first_decline >= self.first_candle_min_decline
-            
-            # 检查第二根K线（十字星）
-            second_body_ratio = second['body'] / second['total_range'] if second['total_range'] > 0 else 1
-            second_is_doji = second_body_ratio <= self.second_candle_max_body_ratio
-            second_gaps_down = second['open'] < first['close']  # 向下跳空或低开
-            
-            # 检查第三根K线（大阳线）
-            third_is_bullish = third['close'] > third['open']
-            third_advance = (third['close'] - third['open']) / third['open'] * 100
-            third_is_large = third_advance >= self.third_candle_min_advance
-            third_closes_into_first = third['close'] > (first['open'] + first['close']) / 2
-            
-            # 综合判断
-            is_morning_star = (
-                first_is_bearish and first_is_large and
-                second_is_doji and
-                third_is_bullish and third_is_large and third_closes_into_first
-            )
-            
-            if is_morning_star:
-                # 判断位置（是否在下跌趋势末端）
-                position = self._judge_position(df, i)
-                
-                # 判断成交量
-                volume_ok = self._check_volume(first, second, third)
-                
-                return {
-                    'is_morning_star': True,
-                    'date': df.index[i] if hasattr(df.index[i], 'strftime') else str(df.index[i]),
-                    'index': i,
-                    'first_decline': first_decline,
-                    'third_advance': third_advance,
-                    'second_is_doji': second_is_doji,
-                    'second_gaps_down': second_gaps_down,
-                    'third_closes_into_first': third_closes_into_first,
-                    'position': position,
-                    'volume_ok': volume_ok
-                }
         
-        return {'is_morning_star': False}
-    
-    def _judge_position(self, df: pd.DataFrame, pattern_idx: int) -> str:
-        """判断形态位置"""
-        # 检查形态前的趋势
-        if pattern_idx < 10:
-            return '未知'
-        
-        pre_trend = df.iloc[pattern_idx - 10:pattern_idx]
-        price_change = (pre_trend['close'].iloc[-1] - pre_trend['close'].iloc[0]) / pre_trend['close'].iloc[0] * 100
-        
-        if price_change < -10:
-            return '下跌末端'
-        elif price_change < -5:
-            return '下跌中'
-        elif price_change > 5:
-            return '上涨中'
-        else:
-            return '震荡中'
-    
-    def _check_volume(self, first: pd.Series, second: pd.Series, third: pd.Series) -> bool:
-        """检查成交量配合"""
-        # 第一天下跌放量，第二天缩量，第三天上攻放量
-        first_volume_ok = first['volume'] > first.get('volume_ma5', first['volume']) * 0.8
-        second_volume_ok = second['volume'] < second.get('volume_ma5', second['volume']) * 0.8
-        third_volume_ok = third['volume'] > third.get('volume_ma5', third['volume']) * 1.0
-        
-        return first_volume_ok and second_volume_ok and third_volume_ok
-    
-    def _calculate_score(self, pattern: Dict, df: pd.DataFrame) -> float:
-        """计算综合评分"""
-        score = 0
-        
-        # 形态完整性（35%）
-        if pattern['first_decline'] >= 5:
-            pattern_score = 100
-        elif pattern['first_decline'] >= 3:
-            pattern_score = 85
-        else:
-            pattern_score = 70
-        score += pattern_score * self.weights['pattern_completeness']
-        
-        # 位置确认（25%）
-        position_scores = {
-            '下跌末端': 100,
-            '下跌中': 85,
-            '震荡中': 70,
-            '上涨中': 50,
-            '未知': 60
-        }
-        position_score = position_scores.get(pattern['position'], 60)
-        score += position_score * self.weights['position_confirmation']
-        
-        # 成交量确认（20%）
-        volume_score = 100 if pattern['volume_ok'] else 60
-        score += volume_score * self.weights['volume_confirmation']
-        
-        # 后续确认（20%）
-        # 检查形态后是否有继续上涨
-        follow_up_score = 80  # 默认中等
-        if pattern['index'] < len(df) - 1:
-            next_day = df.iloc[pattern['index'] + 1]
-            if next_day['close'] > next_day['open']:
-                follow_up_score = 100
-            else:
-                follow_up_score = 70
-        score += follow_up_score * self.weights['follow_up_confirmation']
-        
-        return score
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return results[:top_n]
 
 
 if __name__ == '__main__':
-    # 测试
-    analyzer = MorningStarAnalyzer(data_source='baostock')
-    result = analyzer.analyze_stock('000001', '平安银行')
-    if result:
-        print(f"股票: {result['stock_name']}")
-        print(f"信号: {result['signal']}")
-        print(f"得分: {result['score']}")
-        print(f"第一根跌幅: {result['first_candle_decline']}%")
-        print(f"第三根涨幅: {result['third_candle_advance']}%")
-    else:
-        print("未检测到早晨之星形态")
+    analyzer = MorningStarAnalyzer()
+    
+    test_stocks = [('平安银行', '000001'), ('万科A', '000002')]
+    
+    print("早晨之星策略测试")
+    print("-" * 60)
+    
+    for name, code in test_stocks:
+        result = analyzer.analyze_stock(code, name)
+        if result:
+            print(f"{name}({code}): 评分={result['score']}, 反弹={result['price_recovery']}%")
+        else:
+            print(f"{name}({code}): 未发现早晨之星形态")

@@ -10,8 +10,7 @@ import sys
 # 清除代理环境变量
 for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
     if key in os.environ:
-        if key in os.environ:
-            del os.environ[key]
+        del os.environ[key]
 
 import pandas as pd
 import numpy as np
@@ -20,11 +19,22 @@ from typing import Dict, List, Optional, Tuple
 import warnings
 warnings.filterwarnings('ignore')
 
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # .../skills/scripts
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)  # .../skills
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)  # .../<strategy-name>
+
+# 添加 skills/scripts 到 sys.path（以便导入 data_source_adapter）
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
 # 导入数据源适配器
 try:
-    from skills.scripts.data_source_adapter import DataSourceAdapter
+    from data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/ma-bullish-strategy')
+    # 备用：从 SKILL_ROOT 添加路径
+    if _SKILL_ROOT not in sys.path:
+        sys.path.insert(0, _SKILL_ROOT)
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 

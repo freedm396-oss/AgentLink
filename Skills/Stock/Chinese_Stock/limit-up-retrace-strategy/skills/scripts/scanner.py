@@ -5,7 +5,19 @@
 
 import sys
 import os
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy')
+
+
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import argparse
 from datetime import datetime, timedelta

@@ -1,11 +1,25 @@
+import sys
+import os
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)
+
+if _SKILL_ROOT not in sys.path:
+if _SCRIPT_DIR not in sys.path:
+
 #!/usr/bin/env python3
 """
 涨停板首次回调策略分析器
 """
 
-import sys
-import os
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy')
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+
+    sys.path.insert(0, _SKILL_ROOT)
+    sys.path.insert(0, _SCRIPT_DIR)
+
+# sys.path dynamically set below
 
 import pandas as pd
 import numpy as np
@@ -17,9 +31,8 @@ import yaml
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy')
+    # sys.path dynamically set below
     from skills.scripts.data_source_adapter import DataSourceAdapter
-
 
 class LimitUpRetraceAnalyzer:
     """涨停板首次回调分析器"""
@@ -50,7 +63,7 @@ class LimitUpRetraceAnalyzer:
         从 scoring_weights.yaml 加载评分权重
         若加载失败，打印警告并使用 DEFAULT_WEIGHTS
         """
-        weights_path = '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-retrace-strategy/config/scoring_weights.yaml'
+        weights_path = os.path.join(_SKILL_ROOT, 'config', 'scoring_weights.yaml')
         try:
             with open(weights_path, 'r', encoding='utf-8') as f:
                 cfg = yaml.safe_load(f)
@@ -388,7 +401,6 @@ class LimitUpRetraceAnalyzer:
             stop_signal_info['score'] * self.weights['stop_signal']
         )
         return total_score
-
 
 if __name__ == '__main__':
     # 测试

@@ -1,0 +1,94 @@
+{
+  "date": "20260417",
+  "session": "MORNING_BUY",
+  "generated_at": "2026-04-17T23:21:35.514735",
+  "recommendations": [
+    {
+      "code": "600330",
+      "name": "天通股份",
+      "source": "涨停分析/打板",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "涨停分析/打板信号确认；趋势确认，逢低买入博新高",
+      "combined_score": 74.0,
+      "best_score": 70.0,
+      "strategies": [
+        "涨停分析/打板"
+      ],
+      "position_pct": 20.4,
+      "sectors": [],
+      "session": "MORNING_BUY",
+      "weight": 0.204
+    },
+    {
+      "code": "002487",
+      "name": "大金重工",
+      "source": "涨停分析/打板",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "涨停分析/打板信号确认；趋势确认，逢低买入博新高",
+      "combined_score": 74.0,
+      "best_score": 70.0,
+      "strategies": [
+        "涨停分析/打板"
+      ],
+      "position_pct": 17.4,
+      "sectors": [],
+      "session": "MORNING_BUY",
+      "weight": 0.174
+    },
+    {
+      "code": "000037",
+      "name": "000037",
+      "source": "涨停分析/打板",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "涨停分析/打板信号确认；趋势确认，逢低买入博新高",
+      "combined_score": 74.0,
+      "best_score": 70.0,
+      "strategies": [
+        "涨停分析/打板"
+      ],
+      "position_pct": 14.4,
+      "sectors": [],
+      "session": "MORNING_BUY",
+      "weight": 0.144
+    },
+    {
+      "code": "603083",
+      "name": "剑桥科技",
+      "source": "涨停分析/打板",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "涨停分析/打板信号确认；趋势确认，逢低买入博新高",
+      "combined_score": 74.0,
+      "best_score": 70.0,
+      "strategies": [
+        "涨停分析/打板"
+      ],
+      "position_pct": 11.4,
+      "sectors": [],
+      "session": "MORNING_BUY",
+      "weight": 0.114
+    },
+    {
+      "code": "603118",
+      "name": "共进股份",
+      "source": "涨停分析/打板",
+      "recommend_date": "2026-04-17",
+      "entry_price": 0.0,
+      "target_reason": "涨停分析/打板信号确认；趋势确认，逢低买入博新高",
+      "combined_score": 74.0,
+      "best_score": 70.0,
+      "strategies": [
+        "涨停分析/打板"
+      ],
+      "position_pct": 8.4,
+      "sectors": [],
+      "session": "MORNING_BUY",
+      "weight": 0.084
+    }
+  ],
+  "total_position": 72.0,
+  "stock_count": 5
+}

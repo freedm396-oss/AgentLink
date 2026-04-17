@@ -1,0 +1,57 @@
+{
+  "date": "20260414",
+  "session": "FUSION_REALTIME",
+  "generated_at": "2026-04-14T22:18:28.966768",
+  "recommendations": [
+    {
+      "rank": 1,
+      "code": "002759",
+      "name": "天际股份",
+      "sector": "电池",
+      "price": 38.92,
+      "change": 8.17,
+      "fusion_score": 52.31,
+      "position_pct": 20.2
+    },
+    {
+      "rank": 2,
+      "code": "002407",
+      "name": "多氟多",
+      "sector": "电池",
+      "price": 30.88,
+      "change": 7.71,
+      "fusion_score": 50.93,
+      "position_pct": 17.1
+    },
+    {
+      "rank": 3,
+      "code": "002364",
+      "name": "中恒电气",
+      "sector": "AI算力",
+      "price": 42.49,
+      "change": 9.99,
+      "fusion_score": 49.75,
+      "position_pct": 14.0
+    },
+    {
+      "rank": 4,
+      "code": "688525",
+      "name": "佰维存储",
+      "sector": "存储",
+      "price": 288.1,
+      "change": 12.61,
+      "fusion_score": 49.59,
+      "position_pct": 11.0
+    },
+    {
+      "rank": 5,
+      "code": "603256",
+      "name": "宏和科技",
+      "sector": "电子布与玻璃纤维",
+      "price": 98.0,
+      "change": 9.74,
+      "fusion_score": 49.27,
+      "position_pct": 8.0
+    }
+  ]
+}

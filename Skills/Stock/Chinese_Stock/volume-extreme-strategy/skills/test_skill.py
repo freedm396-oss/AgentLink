@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """volume-extreme-strategy 功能测试"""
 
+import os
 import sys
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/volume-extreme-strategy')
+
+
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SKILL_ROOT = os.path.dirname(_SCRIPT_DIR)
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
 
 print('='*80)
 print('成交量极值策略 - 功能测试')
@@ -33,7 +43,7 @@ print()
 print('3. 测试配置一致性...')
 try:
     import yaml
-    with open('/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/volume-extreme-strategy/config/scoring_weights.yaml', 'r') as f:
+    with open(os.path.join(_SKILL_ROOT, 'config', 'scoring_weights.yaml'), 'r') as f:
         scoring = yaml.safe_load(f)
     weights = scoring.get('weights', {})
     total = sum(weights.values())

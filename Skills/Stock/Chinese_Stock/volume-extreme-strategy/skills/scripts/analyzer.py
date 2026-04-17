@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 成交量地量见底分析器
 识别和分析成交量极度萎缩后的底部反弹机会
 """
 
-import sys
 import os
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/volume-extreme-strategy')
+import sys
+
+# 清除代理环境变量
+for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
+    if key in os.environ:
+        del os.environ[key]
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # .../skills/scripts
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)  # .../skills
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)  # .../<strategy-name>
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)  # .../Chinese_Stock
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import pandas as pd
 import numpy as np
@@ -21,7 +35,8 @@ warnings.filterwarnings('ignore')
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/volume-extreme-strategy')
+    if _SCRIPT_DIR not in sys.path:
+        sys.path.insert(0, _SCRIPT_DIR)
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 
@@ -35,276 +50,261 @@ class VolumeExtremeAnalyzer:
         
         # 成交量参数
         self.volume_ma_period = 20
-        self.extreme_ratio = 0.4
-        self.significant_ratio = 0.5
-        
-        # 价格参数
-        self.ma_period = 20
-        self.min_deviation = 5
+        self.volume_threshold = 0.3  # 地量标准：成交量低于均量的30%
+        self.price_recovery_threshold = 0.02  # 价格恢复阈值
         
         # 评分权重
         self.weights = {
-            'volume_extreme': 0.35,
-            'price_position': 0.25,
-            'stability_signal': 0.25,
-            'follow_up': 0.15
+            'volume_extreme': 0.35,  # 量能极度萎缩程度
+            'price_stability': 0.20,  # 价格稳定性
+            'volume_recovery': 0.20,  # 量能恢复信号
+            'trend_reversal': 0.15,  # 趋势反转确认
+            'market_environment': 0.10  # 市场环境
         }
         
-        # 初始化数据源
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源")
+
+    def calculate_volume_stats(self, df: pd.DataFrame) -> pd.DataFrame:
+        """计算成交量统计指标"""
+        df = df.copy()
         
+        # 成交量均线
+        df['volume_ma'] = df['volume'].rolling(window=self.volume_ma_period, min_periods=1).mean()
+        
+        # 量能萎缩比例
+        df['volume_ratio'] = df['volume'] / df['volume_ma']
+        
+        # 成交量变异系数 (CV) - 衡量波动性
+        if len(df) >= self.volume_ma_period:
+            df['volume_cv'] = df['volume'].rolling(window=self.volume_ma_period).std() / df['volume_ma']
+        else:
+            df['volume_cv'] = 0
+        
+        # 价格变化率
+        df['price_change'] = df['close'].pct_change()
+        df['price_abs_change'] = df['price_change'].abs()
+        
+        # 波动率
+        df['volatility'] = df['price_change'].rolling(window=5).std()
+        
+        return df
+
+    def find_volume_extreme(self, df: pd.DataFrame, lookback: int = 60) -> List[Dict]:
+        """查找成交量极度萎缩的位置"""
+        if len(df) < 20:
+            return []
+        
+        df = self.calculate_volume_stats(df)
+        extremes = []
+        
+        for i in range(self.volume_ma_period, len(df)):
+            row = df.iloc[i]
+            prev_volumes = df['volume'].iloc[max(0, i-20):i]
+            
+            # 条件1：当前成交量低于均量的30%
+            if row['volume_ratio'] > self.volume_threshold:
+                continue
+            
+            # 条件2：最近20日成交量持续萎缩
+            if len(prev_volumes) < 10:
+                continue
+                
+            # 检查是否持续萎缩（后10日均量 < 前10日均量）
+            mid_point = len(prev_volumes) // 2
+            recent_avg = prev_volumes.iloc[mid_point:].mean()
+            older_avg = prev_volumes.iloc[:mid_point].mean()
+            
+            if recent_avg >= older_avg:
+                continue
+            
+            # 条件3：价格相对稳定（波动 < 5%）
+            price_std = df['price_change'].iloc[max(0, i-5):i].std()
+            if price_std > 0.05:
+                continue
+            
+            # 找到极值点
+            local_min_idx = df['volume'].iloc[max(0, i-10):i].idxmin()
+            if local_min_idx == i:
+                extremes.append({
+                    'index': i,
+                    'date': df.index[i] if hasattr(df.index[i], 'strftime') else str(df.index[i]),
+                    'volume_ratio': row['volume_ratio'],
+                    'volume_ma': row['volume_ma'],
+                    'price': row['close']
+                })
+        
+        return extremes
+
+    def analyze_volume_recovery(self, df: pd.DataFrame, extreme_idx: int) -> Dict:
+        """分析地量后的量能恢复"""
+        if extreme_idx >= len(df) - 1:
+            return {'has_recovery': False}
+        
+        recovery_data = df.iloc[extreme_idx:min(extreme_idx+5, len(df))]
+        
+        # 检查量能是否逐步放大
+        volumes = recovery_data['volume'].values
+        if len(volumes) < 2:
+            return {'has_recovery': False}
+        
+        # 第一天vs地量
+        volume_increase = volumes[1] / df.iloc[extreme_idx]['volume'] if df.iloc[extreme_idx]['volume'] > 0 else 0
+        
+        # 价格是否上涨
+        price_change = (recovery_data['close'].iloc[-1] - recovery_data['close'].iloc[0]) / recovery_data['close'].iloc[0]
+        
+        has_recovery = volume_increase > 1.5 and price_change > 0
+        
+        return {
+            'has_recovery': has_recovery,
+            'volume_increase_ratio': volume_increase,
+            'price_change': price_change,
+            'recovery_days': len(recovery_data) - 1
+        }
+
+    def calculate_score(self, df: pd.DataFrame, extreme: Dict, recovery: Dict) -> Tuple[float, str]:
+        """计算股票评分"""
+        score = 0
+        reasons = []
+        
+        # 1. 量能极度萎缩得分 (0-35)
+        volume_ratio = extreme['volume_ratio']
+        if volume_ratio < 0.1:
+            score += 35
+            reasons.append("量能极度萎缩（不足均量10%）")
+        elif volume_ratio < 0.2:
+            score += 28
+            reasons.append("量能严重萎缩（不足均量20%）")
+        elif volume_ratio < 0.3:
+            score += 20
+            reasons.append("量能明显萎缩（不足均量30%）")
+        
+        # 2. 量能恢复得分 (0-20)
+        if recovery['has_recovery']:
+            score += 20
+            reasons.append("量能已出现恢复信号")
+        else:
+            vi_ratio = recovery.get('volume_increase_ratio', 0)
+            if vi_ratio > 1.2:
+                score += 12
+                reasons.append("量能有初步放大迹象")
+        
+        # 3. 价格稳定性得分 (0-20)
+        if len(df) > extreme['index']:
+            recent_df = df.iloc[max(0, extreme['index']-5):extreme['index']]
+            if len(recent_df) >= 3:
+                price_std = recent_df['close'].std() / recent_df['close'].mean()
+                if price_std < 0.02:
+                    score += 20
+                    reasons.append("价格极度稳定")
+                elif price_std < 0.05:
+                    score += 15
+                    reasons.append("价格相对稳定")
+                elif price_std < 0.1:
+                    score += 10
+                    reasons.append("价格波动适中")
+        
+        # 4. 趋势反转确认 (0-15)
+        if recovery['has_recovery'] and recovery['price_change'] > 0.03:
+            score += 15
+            reasons.append("价格已开始上涨，确认底部反转")
+        elif recovery['has_recovery']:
+            score += 10
+            reasons.append("有底部反转迹象")
+        
+        # 5. 市场环境 (0-10)
+        score += 10  # 默认满分
+        
+        return score, "; ".join(reasons)
+
     def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
-        """分析单只股票是否出现地量见底信号"""
+        """分析单只股票"""
         try:
             # 获取数据
-            df = self._get_stock_data(stock_code)
-            if df is None or len(df) < self.volume_ma_period + 30:
+            df = self.data_adapter.get_stock_history(stock_code)
+            if df is None or len(df) < 60:
                 return None
             
-            # 计算指标
-            df = self._calculate_indicators(df)
+            # 标准化列名
+            df = self.data_adapter.normalize_columns(df)
             
-            # 检查地量
-            volume_analysis = self._analyze_volume_extreme(df)
+            # 查找地量位置
+            extremes = self.find_volume_extreme(df)
             
-            if volume_analysis['score'] == 0:
+            if not extremes:
                 return None
             
-            # 分析价格位置
-            price_analysis = self._analyze_price_position(df)
+            # 取最近一次地量
+            extreme = extremes[-1]
             
-            # 分析稳定性信号
-            stability_analysis = self._analyze_stability(df)
+            # 分析量能恢复
+            recovery = self.analyze_volume_recovery(df, extreme['index'])
             
-            # 分析后续走势
-            follow_up_analysis = self._analyze_follow_up(df)
+            # 计算评分
+            score, reasons = self.calculate_score(df, extreme, recovery)
             
-            # 计算综合得分
-            total_score = self._calculate_score(
-                volume_analysis, price_analysis, stability_analysis, follow_up_analysis
-            )
+            # 获取当前价格信息
+            current = df.iloc[-1]
+            current_price = current['close']
+            current_volume = current['volume']
+            volume_ma = extreme['volume_ma']
             
-            # 判断是否出现买入信号
-            if total_score < 65:
-                return None
-            
-            # 生成信号
-            signal = '强烈买入' if total_score >= 85 else '买入' if total_score >= 75 else '观望'
-            
-            latest = df.iloc[-1]
+            # 计算从地量到现在的涨跌幅
+            from_extreme_change = (current_price - extreme['price']) / extreme['price'] * 100
             
             return {
-                'stock_code': stock_code,
-                'stock_name': stock_name or stock_code,
-                'signal': signal,
-                'score': round(total_score, 2),
-                'current_price': round(latest['close'], 2),
-                'volume_ratio': round(volume_analysis['volume_ratio'], 2),
-                'volume_status': volume_analysis['status'],
-                'price_deviation': round(price_analysis['deviation'], 2),
-                'stability_signal': stability_analysis['signal_type'],
-                'follow_up': follow_up_analysis['trend'],
-                'details': {
-                    'volume': volume_analysis,
-                    'price': price_analysis,
-                    'stability': stability_analysis,
-                    'follow_up': follow_up_analysis
-                }
+                'code': stock_code,
+                'name': stock_name or stock_code,
+                'score': score,
+                'reasons': reasons,
+                'current_price': round(current_price, 2),
+                'current_volume': int(current_volume),
+                'volume_ma': round(volume_ma, 0),
+                'volume_ratio': round(extreme['volume_ratio'] * 100, 1),
+                'from_extreme_change': round(from_extreme_change, 2),
+                'has_recovery': recovery['has_recovery'],
+                'strategy': self.name,
+                'win_rate': self.win_rate
             }
             
         except Exception as e:
-            print(f"分析{stock_code}失败: {e}")
             return None
-    
-    def _get_stock_data(self, stock_code: str) -> Optional[pd.DataFrame]:
-        """获取股票历史数据"""
-        try:
-            df = self.data_adapter.get_stock_data(stock_code)
-            if df is None or df.empty:
-                return None
-            return df
-        except Exception as e:
-            print(f"获取{stock_code}数据失败: {e}")
-            return None
-    
-    def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """计算技术指标"""
-        # 计算成交量均线
-        df['volume_ma20'] = df['volume'].rolling(window=self.volume_ma_period).mean()
+
+    def batch_analyze(self, stock_list: List[tuple], top_n: int = 10) -> List[Dict]:
+        """批量分析股票"""
+        results = []
         
-        # 计算价格均线
-        df['MA20'] = df['close'].rolling(window=self.ma_period).mean()
+        for name, code in stock_list:
+            try:
+                result = self.analyze_stock(code, name)
+                if result and result['score'] > 0:
+                    results.append(result)
+            except Exception as e:
+                continue
         
-        # 计算K线实体
-        df['body'] = abs(df['close'] - df['open'])
-        df['total_range'] = df['high'] - df['low']
+        # 按评分排序
+        results.sort(key=lambda x: x['score'], reverse=True)
         
-        return df
-    
-    def _analyze_volume_extreme(self, df: pd.DataFrame) -> Dict:
-        """分析成交量是否地量"""
-        latest = df.iloc[-1]
-        volume_ma20 = latest['volume_ma20']
-        current_volume = latest['volume']
-        
-        if volume_ma20 == 0 or pd.isna(volume_ma20):
-            return {'score': 0, 'volume_ratio': 1, 'status': '无数据'}
-        
-        # 计算成交量比例
-        volume_ratio = current_volume / volume_ma20
-        
-        # 判断地量程度
-        if volume_ratio <= self.extreme_ratio:
-            score = 100
-            status = '极度地量'
-        elif volume_ratio <= self.significant_ratio:
-            score = 85
-            status = '显著缩量'
-        elif volume_ratio <= 0.6:
-            score = 70
-            status = '明显缩量'
-        else:
-            score = 0
-            status = '正常'
-        
-        return {
-            'score': score,
-            'volume_ratio': volume_ratio,
-            'status': status,
-            'current_volume': current_volume,
-            'volume_ma20': volume_ma20
-        }
-    
-    def _analyze_price_position(self, df: pd.DataFrame) -> Dict:
-        """分析价格位置"""
-        latest = df.iloc[-1]
-        ma20 = latest['MA20']
-        current_price = latest['close']
-        
-        if pd.isna(ma20) or ma20 == 0:
-            return {'score': 50, 'deviation': 0}
-        
-        # 计算偏离度（价格低于均线的百分比）
-        deviation = (ma20 - current_price) / ma20 * 100
-        
-        # 评分（下跌越多得分越高，但有上限）
-        if deviation >= 20:
-            score = 100
-        elif deviation >= 15:
-            score = 90
-        elif deviation >= 10:
-            score = 80
-        elif deviation >= self.min_deviation:
-            score = 70
-        else:
-            score = 60
-        
-        return {
-            'score': score,
-            'deviation': deviation,
-            'ma20': ma20
-        }
-    
-    def _analyze_stability(self, df: pd.DataFrame) -> Dict:
-        """分析稳定性信号"""
-        if len(df) < 5:
-            return {'score': 50, 'signal_type': '数据不足'}
-        
-        recent = df.tail(5)
-        
-        # 检查是否止跌（连续下跌后企稳）
-        price_declining = recent['close'].iloc[-2] < recent['close'].iloc[-3]
-        price_stabilizing = abs(recent['close'].iloc[-1] - recent['close'].iloc[-2]) / recent['close'].iloc[-2] < 0.02
-        
-        # 检查是否出现小实体K线（企稳信号）
-        recent_body_ratio = recent['body'].iloc[-1] / recent['total_range'].iloc[-1] if recent['total_range'].iloc[-1] > 0 else 1
-        is_small_body = recent_body_ratio < 0.3
-        
-        # 检查长下影线
-        latest = df.iloc[-1]
-        lower_shadow = min(latest['open'], latest['close']) - latest['low']
-        body = latest['body']
-        has_long_lower_shadow = lower_shadow > body * 1.5 if body > 0 else False
-        
-        if price_declining and price_stabilizing and has_long_lower_shadow:
-            score = 100
-            signal_type = '长下影线企稳'
-        elif price_declining and price_stabilizing and is_small_body:
-            score = 85
-            signal_type = '小实体企稳'
-        elif price_stabilizing:
-            score = 75
-            signal_type = '价格企稳'
-        elif is_small_body:
-            score = 70
-            signal_type = '小实体震荡'
-        else:
-            score = 60
-            signal_type = '无明显信号'
-        
-        return {
-            'score': score,
-            'signal_type': signal_type,
-            'price_stabilizing': price_stabilizing,
-            'is_small_body': is_small_body,
-            'has_long_lower_shadow': has_long_lower_shadow
-        }
-    
-    def _analyze_follow_up(self, df: pd.DataFrame) -> Dict:
-        """分析后续走势"""
-        if len(df) < 10:
-            return {'score': 50, 'trend': '数据不足'}
-        
-        # 检查最近10天的趋势
-        recent = df.tail(10)
-        price_change = (recent['close'].iloc[-1] - recent['close'].iloc[0]) / recent['close'].iloc[0] * 100
-        
-        # 检查是否有反弹迹象
-        recent_3 = df.tail(3)
-        rebounding = recent_3['close'].iloc[-1] > recent_3['close'].iloc[0]
-        
-        if rebounding and price_change > -5:
-            score = 100
-            trend = '开始反弹'
-        elif rebounding:
-            score = 85
-            trend = '企稳回升'
-        elif price_change > -10:
-            score = 70
-            trend = '跌幅收窄'
-        else:
-            score = 60
-            trend = '仍在下跌'
-        
-        return {
-            'score': score,
-            'trend': trend,
-            'price_change': round(price_change, 2)
-        }
-    
-    def _calculate_score(self, volume_analysis: Dict, price_analysis: Dict,
-                        stability_analysis: Dict, follow_up_analysis: Dict) -> float:
-        """计算综合得分"""
-        total_score = (
-            volume_analysis['score'] * self.weights['volume_extreme'] +
-            price_analysis['score'] * self.weights['price_position'] +
-            stability_analysis['score'] * self.weights['stability_signal'] +
-            follow_up_analysis['score'] * self.weights['follow_up']
-        )
-        return total_score
+        return results[:top_n]
 
 
 if __name__ == '__main__':
+    analyzer = VolumeExtremeAnalyzer()
+    
     # 测试
-    analyzer = VolumeExtremeAnalyzer(data_source='baostock')
-    result = analyzer.analyze_stock('000001', '平安银行')
-    if result:
-        print(f"股票: {result['stock_name']}")
-        print(f"信号: {result['signal']}")
-        print(f"得分: {result['score']}")
-        print(f"成交量比: {result['volume_ratio']}")
-        print(f"价格偏离: {result['price_deviation']}%")
-    else:
-        print("未检测到地量见底信号")
+    test_stocks = [
+        ('平安银行', '000001'),
+        ('万科A', '000002'),
+    ]
+    
+    print("成交量地量见底策略测试")
+    print("-" * 60)
+    
+    for name, code in test_stocks:
+        result = analyzer.analyze_stock(code, name)
+        if result:
+            print(f"{name}({code}): 评分={result['score']}, 原因={result['reasons']}")
+        else:
+            print(f"{name}({code}): 未找到地量信号")

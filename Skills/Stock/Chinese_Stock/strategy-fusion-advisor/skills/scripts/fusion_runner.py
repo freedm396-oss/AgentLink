@@ -73,7 +73,7 @@ ANALYZER_CLASS = {
 
 # ── 自选股池加载 ────────────────────────────────────────
 def load_watchlist() -> Dict:
-    path = '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/my_stock_pool/watchlist.yaml'
+    path = os.path.join(_BASE_DIR, 'my_stock_pool', 'watchlist.yaml')
     if not os.path.exists(path):
         return {}
     with open(path, 'r', encoding='utf-8') as f:
@@ -139,18 +139,30 @@ def get_analyzer(strategy_name: str):
     if not cls_name:
         return None
 
-    # 添加策略根目录（包含 skills/ 的那一层）
-    strategy_root = os.path.join(_BASE_DIR, strategy_name)
-    if strategy_root not in sys.path:
-        sys.path.insert(0, strategy_root)
+    # 策略的 analyzer.py 路径
+    analyzer_file = os.path.join(_BASE_DIR, strategy_name, 'skills', 'scripts', 'analyzer.py')
+    if not os.path.exists(analyzer_file):
+        return None
 
-    # 动态导入
+    # 使用 importlib.util.spec_from_file_location 直接从文件加载模块
+    # 这样可以避免 sys.path 缓存冲突
     try:
-        import importlib
-        mod = importlib.import_module('skills.scripts.analyzer')
+        import importlib.util
+        # 创建唯一的模块名避免缓存
+        module_name = f'strategy_analyzer_{strategy_name.replace("-", "_")}'
+        
+        spec = importlib.util.spec_from_file_location(module_name, analyzer_file)
+        if spec is None or spec.loader is None:
+            return None
+        
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = mod
+        spec.loader.exec_module(mod)
+        
         AnalyzerCls = getattr(mod, cls_name, None)
         if AnalyzerCls is None:
             return None
+        
         analyzer = AnalyzerCls(data_source='baostock')
         return analyzer
     except Exception as e:
@@ -158,14 +170,13 @@ def get_analyzer(strategy_name: str):
 
 
 def scan_limit_up_analysis(top_n: int) -> List[Dict]:
-    """涨停分析：有内定的分析逻辑"""
-    # limit-up-analysis 有自己的 scanner，运行它
+    """涨停分析：通过 subprocess 运行 analyzer.py --all"""
     import subprocess
     strategy_dir = os.path.join(_BASE_DIR, 'limit-up-analysis')
-    # 找 scanner 脚本
+    # 找 analyzer 脚本
     candidates = [
-        os.path.join(strategy_dir, 'scripts', 'limit_up_scanner.py'),
-        os.path.join(strategy_dir, 'limit_up_scanner.py'),
+        os.path.join(strategy_dir, 'skills', 'scripts', 'analyzer.py'),
+        os.path.join(strategy_dir, 'scripts', 'analyzer.py'),
     ]
     script = None
     for c in candidates:
@@ -178,7 +189,7 @@ def scan_limit_up_analysis(top_n: int) -> List[Dict]:
 
     try:
         result = subprocess.run(
-            ['python3', script, '--scan', '--top', str(top_n)],
+            ['python3', script, '--all', '--top', str(top_n)],
             capture_output=True, text=True, timeout=120
         )
         return parse_limit_up_output(result.stdout + '\n' + result.stderr, 'limit-up-analysis')
@@ -245,14 +256,14 @@ def parse_limit_up_output(output: str, strategy_name: str = 'limit-up-analysis')
 
 
 def scan_limit_up_retrace(top_n: int) -> List[Dict]:
-    """涨停回踩：通过 subprocess 运行 scanner"""
+    """涨停回踩：通过 subprocess 运行 scanner.py --scan"""
     import subprocess
     script = os.path.join(_BASE_DIR, 'limit-up-retrace-strategy', 'skills', 'scripts', 'scanner.py')
     if not os.path.exists(script):
         return []
     try:
         result = subprocess.run(
-            ['python3', script, '--pool', 'all', '--top', str(top_n)],
+            ['python3', script, '--scan', '--top', str(top_n)],
             capture_output=True, text=True, timeout=120
         )
         return parse_limit_up_output(result.stdout, 'limit-up-retrace-strategy')

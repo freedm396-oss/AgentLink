@@ -9,6 +9,18 @@ import argparse
 import json
 import os
 import sys
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -24,14 +36,14 @@ from colorama import Fore, Style, init
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-analysis')
+    # sys.path dynamically set below
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 # 导入新闻情绪模块
 try:
     from skills.scripts.news_sentiment import search_stock_news, calc_news_penalty
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/limit-up-analysis')
+    # sys.path dynamically set below
     try:
         from skills.scripts.news_sentiment import search_stock_news, calc_news_penalty
     except ImportError:

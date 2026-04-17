@@ -1,23 +1,37 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 MACD底背离策略分析器
+识别价格创出新低但MACD未创新低的底背离信号
 """
 
-import sys
 import os
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/macd-divergence-strategy')
+import sys
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # .../skills/scripts
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)  # .../skills
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)  # .../<strategy-name>
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)  # .../Chinese_Stock
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-import yaml
+import warnings
+warnings.filterwarnings('ignore')
 
 # 导入数据源适配器
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/macd-divergence-strategy')
+    if _SCRIPT_DIR not in sys.path:
+        sys.path.insert(0, _SCRIPT_DIR)
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 
@@ -27,388 +41,246 @@ class MACDDivergenceAnalyzer:
     def __init__(self, data_source: str = "auto"):
         self.name = "MACD底背离策略"
         self.version = "v1.0.0"
+        self.win_rate = 0.58
         
-        # 加载配置
-        self.config = self._load_config()
+        # MACD参数
+        self.fast_ema = 12
+        self.slow_ema = 26
+        self.signal_ema = 9
         
         # 评分权重
         self.weights = {
             'divergence_strength': 0.25,
             'macd_golden_cross': 0.20,
-            'volume_confirmation': 0.20,
-            'candlestick_pattern': 0.20,
-            'support_level': 0.15
+            'volume_confirm': 0.20,
+            'price_stability': 0.20,
+            'market_environment': 0.15
         }
         
-        # 初始化数据源
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源")
-    
-    def _load_config(self) -> Dict:
-        """加载策略配置"""
-        config_path = '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/macd-divergence-strategy/config/strategy_config.yaml'
-        try:
-            with open(config_path, 'r') as f:
-                return yaml.safe_load(f)
-        except:
-            return {}
-    
-    def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
-        """
-        分析单只股票是否出现MACD底背离买入信号
+
+    def calculate_macd(self, df: pd.DataFrame) -> pd.DataFrame:
+        """计算MACD指标"""
+        df = df.copy()
         
-        Args:
-            stock_code: 股票代码
-            stock_name: 股票名称
+        # 计算EMA
+        df['ema_fast'] = df['close'].ewm(span=self.fast_ema, adjust=False).mean()
+        df['ema_slow'] = df['close'].ewm(span=self.slow_ema, adjust=False).mean()
+        
+        # MACD线
+        df['macd'] = df['ema_fast'] - df['ema_slow']
+        
+        # 信号线
+        df['signal'] = df['macd'].ewm(span=self.signal_ema, adjust=False).mean()
+        
+        # MACD柱状图
+        df['histogram'] = df['macd'] - df['signal']
+        
+        return df
+
+    def find_divergence(self, df: pd.DataFrame, lookback: int = 60) -> List[Dict]:
+        """查找MACD底背离信号"""
+        if len(df) < 30:
+            return []
+        
+        df = self.calculate_macd(df)
+        divergences = []
+        
+        for i in range(20, len(df)):
+            # 找到最近20日内价格最低点
+            price_window = df['close'].iloc[max(0, i-20):i+1]
+            price_low_idx = price_window.idxmin()
+            price_low = df.loc[price_low_idx, 'close']
             
-        Returns:
-            分析结果字典
-        """
+            # MACD对应位置的最低值
+            macd_window = df['macd'].iloc[max(0, i-20):i+1]
+            macd_low_idx = macd_window.idxmin()
+            macd_low = df.loc[macd_low_idx, 'macd']
+            
+            # 检查是否是真正的底背离
+            # 1. 价格创新低
+            # 2. MACD未创新低（背离）
+            # 3. 最近一根K线价格上涨
+            
+            if price_low_idx == i:  # 价格创新低
+                # 检查之前是否有更低的低点
+                prev_prices = df['close'].iloc[max(0, i-30):i].values
+                if len(prev_prices) > 0 and price_low < prev_prices.min():
+                    # 价格创新低，检查MACD
+                    prev_macd = df['macd'].iloc[max(0, i-30):i].values
+                    if len(prev_macd) > 0 and macd_low > prev_macd.min():
+                        # MACD未创新低，确认底背离
+                        current_price = df.iloc[i]['close']
+                        current_macd = df.iloc[i]['macd']
+                        
+                        divergences.append({
+                            'index': i,
+                            'date': df.index[i] if hasattr(df.index[i], 'strftime') else str(df.index[i]),
+                            'price_low': price_low,
+                            'macd_low': macd_low,
+                            'current_price': current_price,
+                            'current_macd': current_macd,
+                            'divergence_strength': (macd_low - prev_macd.min()) / abs(prev_macd.min()) if prev_macd.min() != 0 else 0
+                        })
+        
+        return divergences
+
+    def check_golden_cross(self, df: pd.DataFrame, divergence_idx: int) -> bool:
+        """检查MACD是否形成金叉"""
+        if divergence_idx < 5:
+            return False
+        
+        # 金叉：MACD从负转正或从下往上穿越信号线
+        current = df.iloc[divergence_idx]
+        prev = df.iloc[divergence_idx - 1]
+        
+        return current['macd'] > current['signal'] and prev['macd'] <= prev['signal']
+
+    def analyze_volume(self, df: pd.DataFrame, divergence_idx: int) -> float:
+        """分析成交量确认信号"""
+        if divergence_idx < 5:
+            return 0
+        
+        # 检查背离后的成交量是否放大
+        vol_window = df['volume'].iloc[divergence_idx-2:divergence_idx+1]
+        vol_ma = df['volume'].rolling(window=20).mean().iloc[divergence_idx]
+        
+        if vol_ma > 0:
+            avg_vol = vol_window.mean()
+            return min(avg_vol / vol_ma, 2.0)  # 最多2倍
+        return 0
+
+    def calculate_score(self, df: pd.DataFrame, divergence: Dict) -> Tuple[float, str]:
+        """计算评分"""
+        score = 0
+        reasons = []
+        
+        # 1. 背离强度得分 (0-25)
+        strength = divergence.get('divergence_strength', 0)
+        if strength > 0.5:
+            score += 25
+            reasons.append("底背离信号强烈")
+        elif strength > 0.3:
+            score += 20
+            reasons.append("底背离信号明显")
+        elif strength > 0.1:
+            score += 15
+            reasons.append("存在底背离迹象")
+        
+        # 2. 金叉确认得分 (0-20)
+        if self.check_golden_cross(df, divergence['index']):
+            score += 20
+            reasons.append("MACD形成金叉确认")
+        else:
+            score += 8
+            reasons.append("等待金叉确认")
+        
+        # 3. 量能确认得分 (0-20)
+        vol_ratio = self.analyze_volume(df, divergence['index'])
+        if vol_ratio > 1.5:
+            score += 20
+            reasons.append("成交量明显放大配合")
+        elif vol_ratio > 1.2:
+            score += 15
+            reasons.append("成交量温和放大")
+        elif vol_ratio > 1.0:
+            score += 10
+            reasons.append("量能有所恢复")
+        
+        # 4. 价格稳定得分 (0-20)
+        if divergence['index'] >= 5:
+            price_std = df['close'].iloc[divergence['index']-5:divergence['index']].std()
+            price_mean = df['close'].iloc[divergence['index']-5:divergence['index']].mean()
+            cv = price_std / price_mean if price_mean > 0 else 1
+            
+            if cv < 0.02:
+                score += 20
+                reasons.append("价格极度稳定")
+            elif cv < 0.05:
+                score += 15
+                reasons.append("价格相对稳定")
+            elif cv < 0.1:
+                score += 10
+                reasons.append("价格波动适中")
+        
+        # 5. 市场环境得分 (0-15)
+        score += 15  # 默认满分
+        
+        return score, "; ".join(reasons)
+
+    def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
+        """分析单只股票"""
         try:
-            # 获取历史数据
-            df = self._get_stock_data(stock_code)
+            # 获取数据
+            df = self.data_adapter.get_stock_history(stock_code)
             if df is None or len(df) < 60:
                 return None
             
-            # 计算MACD
-            df = self._calculate_macd(df)
+            # 标准化列名
+            df = self.data_adapter.normalize_columns(df)
             
-            # 1. 检测底背离
-            divergence = self._detect_divergence(df)
-            if not divergence['is_divergence']:
+            # 查找底背离
+            divergences = self.find_divergence(df)
+            
+            if not divergences:
                 return None
             
-            # 2. 分析MACD金叉
-            golden_cross = self._analyze_golden_cross(df)
+            # 取最近的底背离信号
+            divergence = divergences[-1]
             
-            # 3. 分析成交量
-            volume = self._analyze_volume(df)
+            # 计算评分
+            score, reasons = self.calculate_score(df, divergence)
             
-            # 4. 分析K线形态
-            candlestick = self._analyze_candlestick(df)
-            
-            # 5. 分析支撑位置
-            support = self._analyze_support(df, divergence)
-            
-            # 计算综合得分
-            total_score = self._calculate_score(
-                divergence, golden_cross, volume, candlestick, support
-            )
-            
-            # 判断是否出现买入信号
-            if total_score < 65:
-                return None
-            
-            # 生成交易建议
-            signal = '强烈买入' if total_score >= 85 else '买入' if total_score >= 75 else '观望'
-            
-            latest = df.iloc[-1]
+            # 获取当前价格
+            current = df.iloc[-1]
             
             return {
-                'stock_code': stock_code,
-                'stock_name': stock_name or stock_code,
-                'signal': signal,
-                'score': round(total_score, 2),
-                'current_price': round(latest['close'], 2),
-                'divergence_type': divergence['type'],
-                'price_low': round(divergence['price_low'], 2),
-                'macd_low': round(divergence['macd_low'], 4),
-                'prev_price_low': round(divergence['prev_price_low'], 2),
-                'prev_macd_low': round(divergence['prev_macd_low'], 4),
-                'golden_cross': golden_cross['has_crossed'],
-                'volume_increase': round(volume['increase_ratio'] * 100, 1),
-                'candlestick': candlestick['pattern'],
-                'support_level': support['level'],
-                'details': {
-                    'divergence': divergence,
-                    'golden_cross': golden_cross,
-                    'volume': volume,
-                    'candlestick': candlestick,
-                    'support': support
-                }
+                'code': stock_code,
+                'name': stock_name or stock_code,
+                'score': score,
+                'reasons': reasons,
+                'current_price': round(current['close'], 2),
+                'current_macd': round(current['macd'], 4),
+                'divergence_strength': round(divergence.get('divergence_strength', 0), 4),
+                'strategy': self.name,
+                'win_rate': self.win_rate
             }
             
         except Exception as e:
-            print(f"分析{stock_code}失败: {e}")
             return None
-    
-    def _get_stock_data(self, stock_code: str) -> Optional[pd.DataFrame]:
-        """获取股票历史数据"""
-        try:
-            df = self.data_adapter.get_stock_data(stock_code)
-            if df is None or df.empty:
-                return None
-            return df
-        except Exception as e:
-            print(f"获取{stock_code}数据失败: {e}")
-            return None
-    
-    def _calculate_macd(self, df: pd.DataFrame) -> pd.DataFrame:
-        """计算MACD指标"""
-        # 计算EMA
-        ema12 = df['close'].ewm(span=12, adjust=False).mean()
-        ema26 = df['close'].ewm(span=26, adjust=False).mean()
+
+    def batch_analyze(self, stock_list: List[tuple], top_n: int = 10) -> List[Dict]:
+        """批量分析"""
+        results = []
         
-        # 计算DIF和DEA
-        df['DIF'] = ema12 - ema26
-        df['DEA'] = df['DIF'].ewm(span=9, adjust=False).mean()
-        df['MACD'] = 2 * (df['DIF'] - df['DEA'])
+        for name, code in stock_list:
+            try:
+                result = self.analyze_stock(code, name)
+                if result and result['score'] > 0:
+                    results.append(result)
+            except Exception:
+                continue
         
-        # 计算成交量均线
-        df['volume_ma5'] = df['volume'].rolling(window=5).mean()
-        
-        return df
-    
-    def _detect_divergence(self, df: pd.DataFrame) -> Dict:
-        """检测MACD底背离"""
-        lookback = 20  # 查看20日内的低点
-        
-        if len(df) < lookback + 10:
-            return {'is_divergence': False}
-        
-        # 获取近期数据
-        recent_df = df.tail(lookback).reset_index(drop=True)
-        
-        # 找到价格低点
-        price_low_idx = recent_df['close'].idxmin()
-        price_low = recent_df.loc[price_low_idx, 'close']
-        macd_at_price_low = recent_df.loc[price_low_idx, 'MACD']
-        
-        # 找到之前的低点（10-20日前）
-        if price_low_idx < 10:
-            return {'is_divergence': False}
-        
-        prev_df = recent_df.iloc[:price_low_idx]
-        prev_price_low_idx = prev_df['close'].idxmin()
-        prev_price_low = prev_df.loc[prev_price_low_idx, 'close']
-        prev_macd_low = prev_df.loc[prev_price_low_idx, 'MACD']
-        
-        # 判断背离
-        price_lower = price_low < prev_price_low
-        macd_not_lower = macd_at_price_low > prev_macd_low
-        
-        is_divergence = price_lower and macd_not_lower
-        
-        # 计算背离强度
-        if is_divergence:
-            price_decline = (prev_price_low - price_low) / prev_price_low * 100
-            macd_improvement = (macd_at_price_low - prev_macd_low) / abs(prev_macd_low) * 100 if prev_macd_low != 0 else 0
-            
-            # 判断背离类型
-            if macd_improvement > 50:
-                div_type = '强背离'
-                score = 100
-            elif macd_improvement > 30:
-                div_type = '中等背离'
-                score = 85
-            else:
-                div_type = '轻微背离'
-                score = 70
-        else:
-            div_type = '无背离'
-            score = 0
-        
-        return {
-            'is_divergence': is_divergence,
-            'type': div_type,
-            'score': score,
-            'price_low': price_low,
-            'macd_low': macd_at_price_low,
-            'prev_price_low': prev_price_low,
-            'prev_macd_low': prev_macd_low,
-            'price_decline': price_decline if is_divergence else 0,
-            'macd_improvement': macd_improvement if is_divergence else 0
-        }
-    
-    def _analyze_golden_cross(self, df: pd.DataFrame) -> Dict:
-        """分析MACD金叉"""
-        latest = df.iloc[-1]
-        prev = df.iloc[-2] if len(df) > 1 else latest
-        
-        # 判断金叉
-        prev_dif_lt_dea = prev['DIF'] < prev['DEA']
-        curr_dif_gt_dea = latest['DIF'] > latest['DEA']
-        
-        has_crossed = prev_dif_lt_dea and curr_dif_gt_dea
-        
-        # 判断柱状线
-        macd_positive = latest['MACD'] > 0
-        macd_turning_positive = prev['MACD'] < 0 and latest['MACD'] > 0
-        
-        # 评分
-        if has_crossed and macd_positive:
-            score = 100
-            status = '已金叉+柱状线转正'
-        elif has_crossed:
-            score = 85
-            status = '刚金叉'
-        elif latest['DIF'] < latest['DEA'] and latest['DIF'] > latest['DEA'] * 0.9:
-            score = 70
-            status = '即将金叉'
-        else:
-            score = 40
-            status = '无金叉'
-        
-        return {
-            'has_crossed': has_crossed,
-            'macd_positive': macd_positive,
-            'macd_turning_positive': macd_turning_positive,
-            'status': status,
-            'score': score,
-            'dif': round(latest['DIF'], 4),
-            'dea': round(latest['DEA'], 4),
-            'macd': round(latest['MACD'], 4)
-        }
-    
-    def _analyze_volume(self, df: pd.DataFrame) -> Dict:
-        """分析成交量"""
-        latest = df.iloc[-1]
-        volume_ma5 = latest['volume_ma5']
-        
-        if volume_ma5 == 0 or pd.isna(volume_ma5):
-            return {'increase_ratio': 1, 'score': 0}
-        
-        increase_ratio = latest['volume'] / volume_ma5
-        
-        # 评分
-        if increase_ratio >= 1.5:
-            score = 100
-        elif increase_ratio >= 1.2:
-            score = 85
-        elif increase_ratio >= 1.0:
-            score = 70
-        else:
-            score = max(0, 100 - (1.0 - increase_ratio) * 200)
-        
-        return {
-            'increase_ratio': increase_ratio,
-            'current_volume': latest['volume'],
-            'volume_ma5': volume_ma5,
-            'score': round(score, 2)
-        }
-    
-    def _analyze_candlestick(self, df: pd.DataFrame) -> Dict:
-        """分析K线形态"""
-        latest = df.iloc[-1]
-        
-        open_price = latest['open']
-        close_price = latest['close']
-        high_price = latest['high']
-        low_price = latest['low']
-        
-        body = abs(close_price - open_price)
-        upper_shadow = high_price - max(open_price, close_price)
-        lower_shadow = min(open_price, close_price) - low_price
-        total_range = high_price - low_price
-        
-        # 判断锤子线
-        is_hammer = (lower_shadow > body * 2 and 
-                     upper_shadow < body * 0.5 and
-                     close_price > open_price)
-        
-        # 判断启明星（需要3天数据）
-        is_morning_star = False
-        if len(df) >= 3:
-            prev2 = df.iloc[-3]
-            prev1 = df.iloc[-2]
-            # 第一天大跌，第二天十字星，第三天上涨
-            if (prev2['close'] < prev2['open'] * 0.97 and
-                abs(prev1['close'] - prev1['open']) < (prev1['high'] - prev1['low']) * 0.1 and
-                close_price > open_price):
-                is_morning_star = True
-        
-        # 判断小阳线
-        is_small_yang = (close_price > open_price and 
-                        body < total_range * 0.3)
-        
-        if is_morning_star:
-            pattern = '启明星'
-            score = 100
-        elif is_hammer:
-            pattern = '锤子线'
-            score = 85
-        elif is_small_yang:
-            pattern = '小阳线'
-            score = 70
-        else:
-            pattern = '无明显形态'
-            score = 40
-        
-        return {
-            'pattern': pattern,
-            'is_hammer': is_hammer,
-            'is_morning_star': is_morning_star,
-            'is_small_yang': is_small_yang,
-            'score': score
-        }
-    
-    def _analyze_support(self, df: pd.DataFrame, divergence: Dict) -> Dict:
-        """分析支撑位置"""
-        latest = df.iloc[-1]
-        current_price = latest['close']
-        
-        # 获取前期低点
-        prev_lows = df['low'].rolling(window=60).min().dropna()
-        if len(prev_lows) > 0:
-            recent_low = prev_lows.iloc[-1]
-        else:
-            recent_low = current_price
-        
-        # 判断整数关口
-        round_levels = [int(current_price / 10) * 10, int(current_price / 5) * 5]
-        nearest_round = min(round_levels, key=lambda x: abs(x - current_price))
-        distance_to_round = abs(current_price - nearest_round) / current_price * 100
-        
-        # 判断是否在前低附近
-        at_prev_low = abs(current_price - recent_low) / current_price * 100 <= 2
-        at_round_level = distance_to_round <= 1
-        
-        # 评分
-        if at_prev_low and at_round_level:
-            level = '前期低点+整数关口'
-            score = 100
-        elif at_prev_low:
-            level = '前期低点'
-            score = 85
-        elif at_round_level:
-            level = '整数关口'
-            score = 70
-        else:
-            level = '无明确支撑'
-            score = 50
-        
-        return {
-            'level': level,
-            'recent_low': round(recent_low, 2),
-            'nearest_round': nearest_round,
-            'at_prev_low': at_prev_low,
-            'at_round_level': at_round_level,
-            'score': score
-        }
-    
-    def _calculate_score(self, divergence: Dict, golden_cross: Dict,
-                        volume: Dict, candlestick: Dict, support: Dict) -> float:
-        """计算综合得分"""
-        total_score = (
-            divergence['score'] * self.weights['divergence_strength'] +
-            golden_cross['score'] * self.weights['macd_golden_cross'] +
-            volume['score'] * self.weights['volume_confirmation'] +
-            candlestick['score'] * self.weights['candlestick_pattern'] +
-            support['score'] * self.weights['support_level']
-        )
-        return total_score
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return results[:top_n]
 
 
 if __name__ == '__main__':
-    # 测试
-    analyzer = MACDDivergenceAnalyzer(data_source='baostock')
-    result = analyzer.analyze_stock('000001', '平安银行')
-    if result:
-        print(f"股票: {result['stock_name']}")
-        print(f"信号: {result['signal']}")
-        print(f"得分: {result['score']}")
-        print(f"背离类型: {result['divergence_type']}")
-        print(f"MACD金叉: {result['golden_cross']}")
-    else:
-        print("不符合条件")
+    analyzer = MACDDivergenceAnalyzer()
+    
+    test_stocks = [
+        ('平安银行', '000001'),
+        ('万科A', '000002'),
+    ]
+    
+    print("MACD底背离策略测试")
+    print("-" * 60)
+    
+    for name, code in test_stocks:
+        result = analyzer.analyze_stock(code, name)
+        if result:
+            print(f"{name}({code}): 评分={result['score']}, 原因={result['reasons']}")
+        else:
+            print(f"{name}({code}): 未发现底背离信号")

@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 RSI超卖反弹分析器
 识别和分析RSI超卖后的技术性反弹机会
 """
 
-import sys
 import os
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/rsi-oversold-strategy')
+import sys
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # .../skills/scripts
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)  # .../skills
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)  # .../<strategy-name>
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)  # .../Chinese_Stock
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import pandas as pd
 import numpy as np
@@ -21,7 +30,8 @@ warnings.filterwarnings('ignore')
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/rsi-oversold-strategy')
+    if _SCRIPT_DIR not in sys.path:
+        sys.path.insert(0, _SCRIPT_DIR)
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 
@@ -35,263 +45,208 @@ class RSIOversoldAnalyzer:
         
         # RSI参数
         self.rsi_period = 14
-        self.oversold_threshold = 30
-        self.extreme_oversold = 20
-        
-        # 偏离参数
-        self.ma_period = 20
-        self.min_deviation = 8
+        self.oversold_level = 30
+        self.overbought_level = 70
         
         # 评分权重
         self.weights = {
-            'rsi_oversold': 0.35,
-            'price_deviation': 0.25,
-            'volume_shrink': 0.20,
-            'stability_signal': 0.20
+            'rsi_oversold': 0.30,
+            'price_recovery': 0.25,
+            'volume_confirm': 0.20,
+            'trend_reversal': 0.15,
+            'market_environment': 0.10
         }
         
-        # 初始化数据源
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源")
+
+    def calculate_rsi(self, df: pd.DataFrame) -> pd.DataFrame:
+        """计算RSI指标"""
+        df = df.copy()
         
-    def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
-        """分析单只股票是否出现RSI超卖"""
-        try:
-            # 获取数据
-            df = self._get_stock_data(stock_code)
-            if df is None or len(df) < self.rsi_period + 20:
-                return None
-            
-            # 计算指标
-            df = self._calculate_indicators(df)
-            
-            # 检查RSI超卖
-            rsi_analysis = self._analyze_rsi_oversold(df)
-            
-            if rsi_analysis['score'] == 0:
-                return None
-            
-            # 分析价格偏离度
-            deviation_analysis = self._analyze_price_deviation(df)
-            
-            # 分析成交量
-            volume_analysis = self._analyze_volume(df)
-            
-            # 分析止跌信号
-            stability_analysis = self._analyze_stability(df)
-            
-            # 计算综合得分
-            total_score = self._calculate_score(
-                rsi_analysis, deviation_analysis, volume_analysis, stability_analysis
-            )
-            
-            # 判断是否出现买入信号
-            if total_score < 65:
-                return None
-            
-            # 生成信号
-            signal = '强烈买入' if total_score >= 85 else '买入' if total_score >= 75 else '观望'
-            
-            latest = df.iloc[-1]
-            
-            return {
-                'stock_code': stock_code,
-                'stock_name': stock_name or stock_code,
-                'signal': signal,
-                'score': round(total_score, 2),
-                'current_price': round(latest['close'], 2),
-                'rsi_value': round(rsi_analysis['rsi'], 2),
-                'rsi_status': rsi_analysis['status'],
-                'price_deviation': round(deviation_analysis['deviation'], 2),
-                'volume_shrink': round(volume_analysis['shrink_ratio'] * 100, 1),
-                'stability_signal': stability_analysis['signal_type'],
-                'details': {
-                    'rsi': rsi_analysis,
-                    'deviation': deviation_analysis,
-                    'volume': volume_analysis,
-                    'stability': stability_analysis
-                }
-            }
-            
-        except Exception as e:
-            print(f"分析{stock_code}失败: {e}")
-            return None
-    
-    def _get_stock_data(self, stock_code: str) -> Optional[pd.DataFrame]:
-        """获取股票历史数据"""
-        try:
-            df = self.data_adapter.get_stock_data(stock_code)
-            if df is None or df.empty:
-                return None
-            return df
-        except Exception as e:
-            print(f"获取{stock_code}数据失败: {e}")
-            return None
-    
-    def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """计算技术指标"""
-        # 计算RSI
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=self.rsi_period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=self.rsi_period).mean()
+        
         rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
-        
-        # 计算均线
-        df['MA20'] = df['close'].rolling(window=self.ma_period).mean()
-        
-        # 计算成交量均线
-        df['volume_ma5'] = df['volume'].rolling(window=5).mean()
+        df['rsi'] = 100 - (100 / (1 + rs))
+        df['rsi'] = df['rsi'].fillna(50)
         
         return df
-    
-    def _analyze_rsi_oversold(self, df: pd.DataFrame) -> Dict:
-        """分析RSI超卖"""
-        latest = df.iloc[-1]
-        rsi = latest['RSI']
+
+    def find_oversold(self, df: pd.DataFrame, lookback: int = 60) -> List[Dict]:
+        """查找RSI超卖信号"""
+        if len(df) < 20:
+            return []
         
-        if pd.isna(rsi):
-            return {'score': 0, 'rsi': 0, 'status': '无数据'}
+        df = self.calculate_rsi(df)
+        oversold_signals = []
         
-        # 判断超卖程度
-        if rsi <= self.extreme_oversold:
-            score = 100
-            status = '极度超卖'
-        elif rsi <= self.oversold_threshold:
-            score = 85
-            status = '超卖'
-        elif rsi <= 35:
-            score = 70
-            status = '接近超卖'
-        else:
-            score = 0
-            status = '正常'
+        for i in range(self.rsi_period, len(df)):
+            rsi = df.iloc[i]['rsi']
+            
+            # 检查是否超卖
+            if rsi < self.oversold_level:
+                # 检查之前是否处于正常或超买状态
+                prev_rsi = df['rsi'].iloc[max(0, i-10):i].mean()
+                
+                if prev_rsi > self.oversold_level:
+                    # 确认从高位进入超卖区域
+                    oversold_signals.append({
+                        'index': i,
+                        'date': df.index[i] if hasattr(df.index[i], 'strftime') else str(df.index[i]),
+                        'rsi': rsi,
+                        'price': df.iloc[i]['close'],
+                        'prev_rsi': prev_rsi
+                    })
         
-        return {
-            'score': score,
-            'rsi': rsi,
-            'status': status
-        }
-    
-    def _analyze_price_deviation(self, df: pd.DataFrame) -> Dict:
-        """分析价格偏离度"""
-        latest = df.iloc[-1]
-        ma20 = latest['MA20']
-        current_price = latest['close']
+        return oversold_signals
+
+    def analyze_recovery(self, df: pd.DataFrame, signal_idx: int) -> Dict:
+        """分析反弹情况"""
+        if signal_idx >= len(df) - 1:
+            return {'has_recovery': False}
         
-        if pd.isna(ma20) or ma20 == 0:
-            return {'score': 0, 'deviation': 0}
+        recovery_window = df.iloc[signal_idx:min(signal_idx+5, len(df))]
         
-        # 计算偏离度（价格低于均线的百分比）
-        deviation = (ma20 - current_price) / ma20 * 100
+        # 计算价格变化
+        price_start = df.iloc[signal_idx]['close']
+        price_end = recovery_window.iloc[-1]['close']
+        price_change = (price_end - price_start) / price_start * 100
         
-        # 评分（偏离越大得分越高，但有上限）
-        if deviation >= 15:
-            score = 100
-        elif deviation >= 10:
-            score = 90
-        elif deviation >= self.min_deviation:
-            score = 80
-        elif deviation >= 5:
-            score = 65
-        else:
-            score = 50
+        # RSI恢复程度
+        rsi_start = df.iloc[signal_idx]['rsi']
+        rsi_end = recovery_window.iloc[-1]['rsi']
+        rsi_recovery = rsi_end - rsi_start
+        
+        has_recovery = rsi_recovery > 10 and price_change > 0
         
         return {
-            'score': score,
-            'deviation': deviation,
-            'ma20': ma20
+            'has_recovery': has_recovery,
+            'price_change': price_change,
+            'rsi_recovery': rsi_recovery
         }
-    
-    def _analyze_volume(self, df: pd.DataFrame) -> Dict:
-        """分析成交量"""
-        latest = df.iloc[-1]
-        volume_ma5 = latest['volume_ma5']
+
+    def calculate_score(self, df: pd.DataFrame, signal: Dict, recovery: Dict) -> Tuple[float, str]:
+        """计算评分"""
+        score = 0
+        reasons = []
         
-        if volume_ma5 == 0 or pd.isna(volume_ma5):
-            return {'score': 50, 'shrink_ratio': 1}
+        # 1. RSI超卖程度得分 (0-30)
+        rsi = signal['rsi']
+        if rsi < 20:
+            score += 30
+            reasons.append("RSI严重超卖(<20)")
+        elif rsi < 25:
+            score += 25
+            reasons.append("RSI深度超卖(<25)")
+        elif rsi < 30:
+            score += 20
+            reasons.append("RSI超卖(<30)")
         
-        # 计算缩量程度
-        shrink_ratio = latest['volume'] / volume_ma5
+        # 2. 反弹强度得分 (0-25)
+        if recovery['has_recovery']:
+            score += 25
+            reasons.append("已出现明显反弹")
+        elif recovery['price_change'] > 3:
+            score += 18
+            reasons.append("价格开始回升")
+        elif recovery['price_change'] > 0:
+            score += 12
+            reasons.append("价格企稳")
         
-        # 评分（缩量越多得分越高）
-        if shrink_ratio < 0.5:
-            score = 100
-        elif shrink_ratio < 0.7:
-            score = 85
-        elif shrink_ratio < 0.9:
-            score = 70
-        else:
-            score = 50
+        # 3. 量能确认得分 (0-20)
+        if signal['index'] < len(df) - 1:
+            vol_ratio = df.iloc[signal['index'] + 1]['volume'] / df.iloc[signal['index']]['volume'] if df.iloc[signal['index']]['volume'] > 0 else 1
+            if vol_ratio > 1.5:
+                score += 20
+                reasons.append("成交量大幅放大")
+            elif vol_ratio > 1.2:
+                score += 15
+                reasons.append("成交量温和放大")
+            elif vol_ratio > 1.0:
+                score += 10
+                reasons.append("成交量有所放大")
         
-        return {
-            'score': score,
-            'shrink_ratio': shrink_ratio,
-            'current_volume': latest['volume'],
-            'volume_ma5': volume_ma5
-        }
-    
-    def _analyze_stability(self, df: pd.DataFrame) -> Dict:
-        """分析止跌信号"""
-        if len(df) < 3:
-            return {'score': 50, 'signal_type': '数据不足'}
+        # 4. 趋势反转确认 (0-15)
+        if signal['index'] >= 3:
+            recent_prices = df['close'].iloc[signal['index']-3:signal['index']].values
+            current_price = df.iloc[signal['index']]['close']
+            if all(current_price > p for p in recent_prices):
+                score += 15
+                reasons.append("价格连涨，确认反转")
+            elif current_price > recent_prices[-1]:
+                score += 10
+                reasons.append("价格有所反弹")
         
-        latest = df.iloc[-1]
-        prev = df.iloc[-2]
-        prev2 = df.iloc[-3]
+        # 5. 市场环境得分 (0-10)
+        score += 10
         
-        # 检查是否止跌（连续下跌后收阳）
-        prev_declining = prev['close'] < prev2['close']
-        current_rising = latest['close'] > prev['close']
+        return score, "; ".join(reasons)
+
+    def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
+        """分析单只股票"""
+        try:
+            df = self.data_adapter.get_stock_history(stock_code)
+            if df is None or len(df) < 30:
+                return None
+            
+            df = self.data_adapter.normalize_columns(df)
+            
+            signals = self.find_oversold(df)
+            
+            if not signals:
+                return None
+            
+            signal = signals[-1]
+            recovery = self.analyze_recovery(df, signal['index'])
+            
+            score, reasons = self.calculate_score(df, signal, recovery)
+            
+            current = df.iloc[-1]
+            
+            return {
+                'code': stock_code,
+                'name': stock_name or stock_code,
+                'score': score,
+                'reasons': reasons,
+                'current_price': round(current['close'], 2),
+                'current_rsi': round(current['rsi'], 2),
+                'strategy': self.name,
+                'win_rate': self.win_rate
+            }
+            
+        except Exception as e:
+            return None
+
+    def batch_analyze(self, stock_list: List[tuple], top_n: int = 10) -> List[Dict]:
+        """批量分析"""
+        results = []
         
-        # 检查下影线
-        body = abs(latest['close'] - latest['open'])
-        lower_shadow = min(latest['open'], latest['close']) - latest['low']
-        has_long_lower_shadow = lower_shadow > body * 1.5
+        for name, code in stock_list:
+            try:
+                result = self.analyze_stock(code, name)
+                if result and result['score'] > 0:
+                    results.append(result)
+            except Exception:
+                continue
         
-        if prev_declining and current_rising and has_long_lower_shadow:
-            score = 100
-            signal_type = '锤子线止跌'
-        elif prev_declining and current_rising:
-            score = 85
-            signal_type = '止跌反弹'
-        elif has_long_lower_shadow:
-            score = 75
-            signal_type = '长下影线'
-        else:
-            score = 60
-            signal_type = '无明显信号'
-        
-        return {
-            'score': score,
-            'signal_type': signal_type,
-            'prev_declining': prev_declining,
-            'current_rising': current_rising,
-            'has_long_lower_shadow': has_long_lower_shadow
-        }
-    
-    def _calculate_score(self, rsi_analysis: Dict, deviation_analysis: Dict,
-                        volume_analysis: Dict, stability_analysis: Dict) -> float:
-        """计算综合得分"""
-        total_score = (
-            rsi_analysis['score'] * self.weights['rsi_oversold'] +
-            deviation_analysis['score'] * self.weights['price_deviation'] +
-            volume_analysis['score'] * self.weights['volume_shrink'] +
-            stability_analysis['score'] * self.weights['stability_signal']
-        )
-        return total_score
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return results[:top_n]
 
 
 if __name__ == '__main__':
-    # 测试
-    analyzer = RSIOversoldAnalyzer(data_source='baostock')
-    result = analyzer.analyze_stock('000001', '平安银行')
-    if result:
-        print(f"股票: {result['stock_name']}")
-        print(f"信号: {result['signal']}")
-        print(f"得分: {result['score']}")
-        print(f"RSI: {result['rsi_value']}")
-        print(f"偏离度: {result['price_deviation']}%")
-    else:
-        print("未检测到RSI超卖信号")
+    analyzer = RSIOversoldAnalyzer()
+    
+    test_stocks = [('平安银行', '000001'), ('万科A', '000002')]
+    
+    print("RSI超卖策略测试")
+    print("-" * 60)
+    
+    for name, code in test_stocks:
+        result = analyzer.analyze_stock(code, name)
+        if result:
+            print(f"{name}({code}): 评分={result['score']}, RSI={result['current_rsi']}")
+        else:
+            print(f"{name}({code}): 未发现超卖信号")

@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 突破前期高点分析器
 识别和分析股价突破前期重要高点的买入机会
 """
 
-import sys
 import os
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/breakout-high-strategy')
+import sys
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # .../skills/scripts
+_SKILL_DIR = os.path.dirname(_SCRIPT_DIR)  # .../skills
+_SKILL_ROOT = os.path.dirname(_SKILL_DIR)  # .../<strategy-name>
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)  # .../Chinese_Stock
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import pandas as pd
 import numpy as np
@@ -21,7 +30,8 @@ warnings.filterwarnings('ignore')
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/breakout-high-strategy')
+    if _SCRIPT_DIR not in sys.path:
+        sys.path.insert(0, _SCRIPT_DIR)
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 
@@ -34,272 +44,193 @@ class BreakoutHighAnalyzer:
         self.win_rate = 0.68
         
         # 突破参数
-        self.lookback_days = 60        # 回看天数
-        self.min_breakout_pct = 3.0    # 最小突破幅度
-        self.min_volume_ratio = 1.5    # 最小放量倍数
+        self.lookback_days = 60
+        self.breakout_threshold = 0.02  # 突破确认阈值 2%
+        self.volume_multiplier = 1.5  # 成交量放大倍数
         
         # 评分权重
         self.weights = {
-            'breakout_quality': 0.35,
-            'volume_confirmation': 0.25,
-            'trend_cooperation': 0.25,
-            'pullback_confirmation': 0.15
+            'breakout_strength': 0.30,
+            'volume_confirm': 0.25,
+            'price_momentum': 0.20,
+            'pattern_quality': 0.15,
+            'market_environment': 0.10
         }
         
-        # 初始化数据源
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源")
+
+    def find_breakout(self, df: pd.DataFrame) -> List[Dict]:
+        """查找突破前期高点的信号"""
+        if len(df) < 30:
+            return []
         
+        breakouts = []
+        
+        for i in range(20, len(df)):
+            current = df.iloc[i]
+            current_price = current['close']
+            
+            # 计算前60日最高价（不包括当天）
+            price_window = df['close'].iloc[max(0, i-60):i]
+            highest_price = price_window.max()
+            
+            # 检查是否突破
+            if current_price > highest_price * (1 + self.breakout_threshold):
+                # 计算突破强度
+                breakout_ratio = (current_price - highest_price) / highest_price
+                
+                # 检查成交量是否放大
+                vol_window = df['volume'].iloc[max(0, i-20):i]
+                avg_volume = vol_window.mean()
+                current_volume = current['volume']
+                volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
+                
+                # 计算动量
+                momentum_5d = (current_price - df['close'].iloc[i-5]) / df['close'].iloc[i-5] if i >= 5 else 0
+                
+                breakouts.append({
+                    'index': i,
+                    'date': df.index[i] if hasattr(df.index[i], 'strftime') else str(df.index[i]),
+                    'breakout_price': current_price,
+                    'highest_price': highest_price,
+                    'breakout_ratio': breakout_ratio,
+                    'volume_ratio': volume_ratio,
+                    'momentum_5d': momentum_5d,
+                    'volume': current_volume,
+                    'avg_volume': avg_volume
+                })
+        
+        return breakouts
+
+    def calculate_score(self, breakout: Dict) -> Tuple[float, str]:
+        """计算评分"""
+        score = 0
+        reasons = []
+        
+        # 1. 突破强度得分 (0-30)
+        ratio = breakout['breakout_ratio']
+        if ratio > 0.08:
+            score += 30
+            reasons.append("突破力度极强(>8%)")
+        elif ratio > 0.05:
+            score += 25
+            reasons.append("突破力度较强(>5%)")
+        elif ratio > 0.03:
+            score += 20
+            reasons.append("突破力度良好(>3%)")
+        else:
+            score += 15
+            reasons.append("突破力度一般")
+        
+        # 2. 量能确认得分 (0-25)
+        vol_ratio = breakout['volume_ratio']
+        if vol_ratio > 2.0:
+            score += 25
+            reasons.append("成交量大幅放大(>2倍)")
+        elif vol_ratio > 1.5:
+            score += 20
+            reasons.append("成交量明显放大(>1.5倍)")
+        elif vol_ratio > 1.2:
+            score += 15
+            reasons.append("成交量温和放大")
+        else:
+            score += 8
+            reasons.append("成交量未明显放大")
+        
+        # 3. 动量得分 (0-20)
+        momentum = breakout['momentum_5d']
+        if momentum > 0.10:
+            score += 20
+            reasons.append("短期动量强劲(>10%)")
+        elif momentum > 0.05:
+            score += 15
+            reasons.append("短期动量良好(>5%)")
+        elif momentum > 0:
+            score += 10
+            reasons.append("短期价格上胀")
+        
+        # 4. 形态质量得分 (0-15)
+        if ratio > 0.05 and vol_ratio > 1.5:
+            score += 15
+            reasons.append("突破形态标准")
+        elif ratio > 0.03 and vol_ratio > 1.2:
+            score += 10
+            reasons.append("突破形态尚可")
+        else:
+            score += 5
+            reasons.append("突破形态较弱")
+        
+        # 5. 市场环境得分 (0-10)
+        score += 10
+        
+        return score, "; ".join(reasons)
+
     def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
-        """分析单只股票是否出现突破"""
+        """分析单只股票"""
         try:
-            # 获取数据
-            df = self._get_stock_data(stock_code)
-            if df is None or len(df) < self.lookback_days + 10:
+            df = self.data_adapter.get_stock_history(stock_code)
+            if df is None or len(df) < 30:
                 return None
             
-            # 计算指标
-            df = self._calculate_indicators(df)
+            df = self.data_adapter.normalize_columns(df)
             
-            # 查找突破
-            breakout = self._find_breakout(df)
+            breakouts = self.find_breakout(df)
             
-            if not breakout:
+            if not breakouts:
                 return None
             
-            # 分析突破质量
-            breakout_analysis = self._analyze_breakout_quality(df, breakout)
+            # 取最后一次突破信号
+            breakout = breakouts[-1]
+            score, reasons = self.calculate_score(breakout)
             
-            # 分析成交量
-            volume_analysis = self._analyze_volume(df, breakout)
-            
-            # 分析趋势配合
-            trend_analysis = self._analyze_trend(df, breakout)
-            
-            # 分析回踩确认
-            pullback_analysis = self._analyze_pullback(df, breakout)
-            
-            # 计算综合得分
-            total_score = self._calculate_score(
-                breakout_analysis, volume_analysis, trend_analysis, pullback_analysis
-            )
-            
-            # 判断是否出现买入信号
-            if total_score < 70:
-                return None
-            
-            # 生成信号
-            signal = '强烈买入' if total_score >= 85 else '买入' if total_score >= 75 else '观望'
-            
-            latest = df.iloc[-1]
+            current = df.iloc[-1]
             
             return {
-                'stock_code': stock_code,
-                'stock_name': stock_name or stock_code,
-                'signal': signal,
-                'score': round(total_score, 2),
-                'current_price': round(latest['close'], 2),
-                'breakout_price': round(breakout['price'], 2),
-                'previous_high': round(breakout['previous_high'], 2),
-                'breakout_pct': round(breakout['breakout_pct'], 2),
-                'volume_ratio': round(volume_analysis['volume_ratio'], 2),
-                'trend_direction': trend_analysis['direction'],
-                'pullback_confirmed': pullback_analysis['confirmed'],
-                'details': {
-                    'breakout': breakout_analysis,
-                    'volume': volume_analysis,
-                    'trend': trend_analysis,
-                    'pullback': pullback_analysis
-                }
+                'code': stock_code,
+                'name': stock_name or stock_code,
+                'score': score,
+                'reasons': reasons,
+                'current_price': round(current['close'], 2),
+                'breakout_price': round(breakout['breakout_price'], 2),
+                'highest_60d': round(breakout['highest_price'], 2),
+                'breakout_ratio': round(breakout['breakout_ratio'] * 100, 2),
+                'volume_ratio': round(breakout['volume_ratio'], 2),
+                'strategy': self.name,
+                'win_rate': self.win_rate
             }
             
         except Exception as e:
-            print(f"分析{stock_code}失败: {e}")
             return None
-    
-    def _get_stock_data(self, stock_code: str) -> Optional[pd.DataFrame]:
-        """获取股票历史数据"""
-        try:
-            df = self.data_adapter.get_stock_data(stock_code)
-            if df is None or df.empty:
-                return None
-            return df
-        except Exception as e:
-            print(f"获取{stock_code}数据失败: {e}")
-            return None
-    
-    def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """计算技术指标"""
-        # 计算均线
-        df['MA5'] = df['close'].rolling(window=5).mean()
-        df['MA10'] = df['close'].rolling(window=10).mean()
-        df['MA20'] = df['close'].rolling(window=20).mean()
+
+    def batch_analyze(self, stock_list: List[tuple], top_n: int = 10) -> List[Dict]:
+        """批量分析"""
+        results = []
         
-        # 计算成交量均线
-        df['volume_ma5'] = df['volume'].rolling(window=5).mean()
-        df['volume_ma20'] = df['volume'].rolling(window=20).mean()
+        for name, code in stock_list:
+            try:
+                result = self.analyze_stock(code, name)
+                if result and result['score'] > 0:
+                    results.append(result)
+            except Exception:
+                continue
         
-        # 计算前期高点
-        df['previous_high'] = df['high'].rolling(window=self.lookback_days).max().shift(1)
-        
-        return df
-    
-    def _find_breakout(self, df: pd.DataFrame) -> Optional[Dict]:
-        """查找突破"""
-        latest = df.iloc[-1]
-        
-        # 检查是否突破前期高点
-        if pd.isna(latest['previous_high']) or latest['previous_high'] == 0:
-            return None
-        
-        breakout_pct = (latest['close'] - latest['previous_high']) / latest['previous_high'] * 100
-        
-        # 检查突破幅度
-        if breakout_pct < self.min_breakout_pct:
-            return None
-        
-        # 检查是否创了新高
-        is_new_high = latest['close'] == df['close'].tail(self.lookback_days).max()
-        
-        return {
-            'price': latest['close'],
-            'previous_high': latest['previous_high'],
-            'breakout_pct': breakout_pct,
-            'is_new_high': is_new_high,
-            'date': latest.get('date', df.index[-1])
-        }
-    
-    def _analyze_breakout_quality(self, df: pd.DataFrame, breakout: Dict) -> Dict:
-        """分析突破质量"""
-        breakout_pct = breakout['breakout_pct']
-        is_new_high = breakout['is_new_high']
-        
-        # 评分
-        if breakout_pct >= 5 and is_new_high:
-            score = 100
-            quality = '强势突破'
-        elif breakout_pct >= 3 and is_new_high:
-            score = 85
-            quality = '有效突破'
-        elif breakout_pct >= 3:
-            score = 70
-            quality = '一般突破'
-        else:
-            score = 50
-            quality = '弱势突破'
-        
-        return {
-            'score': score,
-            'quality': quality,
-            'breakout_pct': breakout_pct,
-            'is_new_high': is_new_high
-        }
-    
-    def _analyze_volume(self, df: pd.DataFrame, breakout: Dict) -> Dict:
-        """分析成交量"""
-        latest = df.iloc[-1]
-        volume_ma20 = latest['volume_ma20']
-        
-        if volume_ma20 == 0 or pd.isna(volume_ma20):
-            return {'score': 0, 'volume_ratio': 1}
-        
-        volume_ratio = latest['volume'] / volume_ma20
-        
-        # 评分
-        if volume_ratio >= 2.0:
-            score = 100
-        elif volume_ratio >= 1.5:
-            score = 85
-        elif volume_ratio >= 1.2:
-            score = 70
-        else:
-            score = max(0, 100 - (1.2 - volume_ratio) * 200)
-        
-        return {
-            'score': score,
-            'volume_ratio': volume_ratio,
-            'current_volume': latest['volume'],
-            'volume_ma20': volume_ma20
-        }
-    
-    def _analyze_trend(self, df: pd.DataFrame, breakout: Dict) -> Dict:
-        """分析趋势配合"""
-        latest = df.iloc[-1]
-        
-        # 判断均线多头排列
-        ma_bullish = latest['MA5'] > latest['MA10'] > latest['MA20']
-        
-        # 判断均线斜率
-        ma5_slope = (latest['MA5'] - df.iloc[-5]['MA5']) / latest['MA5'] * 100 if len(df) >= 5 else 0
-        
-        # 评分
-        if ma_bullish and ma5_slope > 1:
-            score = 100
-            direction = '强势上涨'
-        elif ma_bullish:
-            score = 85
-            direction = '多头排列'
-        elif latest['MA5'] > latest['MA10']:
-            score = 70
-            direction = '短期向好'
-        else:
-            score = 50
-            direction = '趋势不明'
-        
-        return {
-            'score': score,
-            'direction': direction,
-            'ma_bullish': ma_bullish,
-            'ma5_slope': round(ma5_slope, 2)
-        }
-    
-    def _analyze_pullback(self, df: pd.DataFrame, breakout: Dict) -> Dict:
-        """分析回踩确认"""
-        # 检查突破后是否回踩前期高点（现在变成支撑）
-        previous_high = breakout['previous_high']
-        latest = df.iloc[-1]
-        
-        # 简单判断：如果当前价格仍在突破价附近或之上，认为确认有效
-        pullback_pct = (latest['close'] - previous_high) / previous_high * 100
-        
-        if pullback_pct >= breakout['breakout_pct'] * 0.5:
-            confirmed = True
-            score = 100
-        elif pullback_pct > 0:
-            confirmed = True
-            score = 80
-        else:
-            confirmed = False
-            score = 50
-        
-        return {
-            'score': score,
-            'confirmed': confirmed,
-            'pullback_pct': round(pullback_pct, 2)
-        }
-    
-    def _calculate_score(self, breakout_analysis: Dict, volume_analysis: Dict,
-                        trend_analysis: Dict, pullback_analysis: Dict) -> float:
-        """计算综合得分"""
-        total_score = (
-            breakout_analysis['score'] * self.weights['breakout_quality'] +
-            volume_analysis['score'] * self.weights['volume_confirmation'] +
-            trend_analysis['score'] * self.weights['trend_cooperation'] +
-            pullback_analysis['score'] * self.weights['pullback_confirmation']
-        )
-        return total_score
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return results[:top_n]
 
 
 if __name__ == '__main__':
-    # 测试
-    analyzer = BreakoutHighAnalyzer(data_source='baostock')
-    result = analyzer.analyze_stock('000001', '平安银行')
-    if result:
-        print(f"股票: {result['stock_name']}")
-        print(f"信号: {result['signal']}")
-        print(f"得分: {result['score']}")
-        print(f"突破幅度: {result['breakout_pct']}%")
-        print(f"成交量比: {result['volume_ratio']}")
-    else:
-        print("未检测到突破信号")
+    analyzer = BreakoutHighAnalyzer()
+    
+    test_stocks = [('平安银行', '000001'), ('东山精密', '002384')]
+    
+    print("突破前期高点策略测试")
+    print("-" * 60)
+    
+    for name, code in test_stocks:
+        result = analyzer.analyze_stock(code, name)
+        if result:
+            print(f"{name}({code}): 评分={result['score']}, 突破={result['breakout_ratio']}%, 量比={result['volume_ratio']}")
+        else:
+            print(f"{name}({code}): 未发现突破信号")

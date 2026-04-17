@@ -2,7 +2,15 @@
 """功能测试脚本"""
 
 import sys
-sys.path.insert(0, '/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/ma-bullish-strategy')
+import os
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # .../skills
+_SKILL_ROOT = os.path.dirname(_SCRIPT_DIR)  # .../<strategy-name>
+_BASE_DIR = os.path.dirname(_SKILL_ROOT)  # .../Chinese_Stock
+
+if _SKILL_ROOT not in sys.path:
+    sys.path.insert(0, _SKILL_ROOT)
 
 print('='*80)
 print('均线多头排列策略 - 功能测试')
@@ -48,7 +56,8 @@ try:
     import yaml
 
     # 读取评分权重
-    with open('/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/ma-bullish-strategy/config/scoring_weights.yaml', 'r') as f:
+    scoring_path = os.path.join(_SKILL_ROOT, 'config', 'scoring_weights.yaml')
+    with open(scoring_path, 'r') as f:
         scoring = yaml.safe_load(f)
 
     weights = scoring['weights']
@@ -60,7 +69,8 @@ try:
         print('   ❌ 权重配置错误')
 
     # 检查阈值（从 strategy_config.yaml）
-    with open('/home/qinliming/.npm-global/lib/node_modules/openclaw/skills/Stock/Chinese_Stock/ma-bullish-strategy/config/strategy_config.yaml', 'r') as f:
+    config_path = os.path.join(_SKILL_ROOT, 'config', 'strategy_config.yaml')
+    with open(config_path, 'r') as f:
         cfg = yaml.safe_load(f)
     thresholds = cfg.get('scoring', {}).get('thresholds', {})
     print(f"   评分阈值: 强烈推荐≥{thresholds.get('strong',85)}, 推荐≥{thresholds.get('recommend',75)}, 关注≥{thresholds.get('watch',70)}")

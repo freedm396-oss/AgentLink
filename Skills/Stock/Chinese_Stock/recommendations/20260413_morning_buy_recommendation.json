@@ -1,0 +1,24 @@
+{
+  "date": "20260413",
+  "session": "MORNING_BUY",
+  "recommendations": [
+    {
+      "code": "000001",
+      "name": "平安银行",
+      "source": "ma_bullish",
+      "reason": "均线多头排列，趋势确认"
+    },
+    {
+      "code": "000063",
+      "name": "中兴通讯",
+      "source": "breakout_high",
+      "reason": "突破新高，放量上涨"
+    },
+    {
+      "code": "002415",
+      "name": "海康威视",
+      "source": "rsi_oversold",
+      "reason": "RSI超卖，反弹在即"
+    }
+  ]
+}
