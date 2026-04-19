@@ -105,14 +105,14 @@ class StockDataFetcher:
 class LimitUpAnalyzer:
     """涨停板连板分析器"""
     
-    # 评分权重配置（与scoring_weights.yaml一致）
+    # 评分权重配置（五维评分，新闻情绪作为加减分项）
     WEIGHTS = {
-        'sealing_strength': 0.28,    # 封板强度
-        'sector_effect': 0.22,       # 板块效应
-        'capital_flow': 0.18,        # 资金流向
-        'technical_pattern': 0.14,  # 技术形态
-        'market_sentiment': 0.08,   # 市场情绪（已减去连板虚高）
-        'news_sentiment': 0.10,      # ⚡ 新闻情绪（新增）
+        'sealing_strength': 0.30,    # 封板强度 (30%)
+        'sector_effect': 0.25,       # 板块效应 (25%)
+        'capital_flow': 0.20,        # 资金流向 (20%)
+        'technical_pattern': 0.15,   # 技术形态 (15%)
+        'market_sentiment': 0.10,    # 市场情绪 (10%)
+        # 新闻情绪不作为维度，而是作为加减分项 (-10 ~ +5分)
     }
     
     # 评分阈值（与scoring_weights.yaml一致）
@@ -133,7 +133,7 @@ class LimitUpAnalyzer:
         """确保数据目录存在"""
         os.makedirs(self.history_dir, exist_ok=True)
     
-    def calc_scores(self, row: pd.Series, all_df: pd.DataFrame) -> Dict:
+    def calc_scores(self, row: pd.Series, all_df: pd.DataFrame, market_sentiment: float = None) -> Dict:
         """基于涨停数据计算六维度评分（新增新闻情绪）"""
         scores = {}
         
@@ -173,29 +173,47 @@ class LimitUpAnalyzer:
         
         scores['sealing_strength'] = min(100, sealing_score)
         
-        # 2. 板块效应 (22%)
+        # 2. 板块效应 (22%) - 基础分50，更合理
         sector = row.get('所属行业', '')
         sector_count = len(all_df[all_df['所属行业'] == sector])
-        sector_score = 40
+        sector_score = 50  # 提高基础分
         if sector_count >= 10:
-            sector_score += 28
+            sector_score += 25  # 热点板块
         elif sector_count >= 5:
-            sector_score += 20
+            sector_score += 18
         elif sector_count >= 3:
-            sector_score += 12
+            sector_score += 10
         elif sector_count >= 1:
-            sector_score += 6
+            sector_score += 5
         
         sector_df = all_df[all_df['所属行业'] == sector].sort_values('首次封板时间')
         if not sector_df.empty and sector_df.iloc[0]['代码'] == row['代码']:
-            sector_score += 18
+            sector_score += 15  # 板块龙头加分
         elif len(sector_df) > 1 and sector_df.iloc[1]['代码'] == row['代码']:
-            sector_score += 9
+            sector_score += 8   # 板块龙二加分
         
         scores['sector_effect'] = min(100, sector_score)
         
-        # 3. 资金流向 (18%) - 涨停数据中无详细资金，给基础分
-        scores['capital_flow'] = 60
+        # 3. 资金流向 (18%) - 根据封板资金和连板数估算
+        capital_score = 50  # 提高基础分
+        seal_amount = row.get('封板资金', 0)
+        if seal_amount > 500000000:  # 5亿
+            capital_score += 30
+        elif seal_amount > 100000000:  # 1亿
+            capital_score += 20
+        elif seal_amount > 50000000:  # 5000万
+            capital_score += 12
+        elif seal_amount > 10000000:  # 1000万
+            capital_score += 6
+        
+        # 连板数反映资金认可度
+        limit_up_days = row.get('连板数', 1)
+        if limit_up_days >= 3:
+            capital_score += 15  # 3板以上说明资金持续流入
+        elif limit_up_days >= 2:
+            capital_score += 8
+        
+        scores['capital_flow'] = min(100, capital_score)
         
         # 4. 技术形态 (14%) - 改为风险折扣模式
         limit_up_days = row.get('连板数', 1)
@@ -212,23 +230,18 @@ class LimitUpAnalyzer:
         else:
             scores['technical_pattern'] = 80  # 首板最强
         
-        # 5. 市场情绪 (8%)
-        sentiment_score = 50
-        total_zt = len(all_df)
-        if total_zt >= 100:
-            sentiment_score += 20
-        elif total_zt >= 50:
-            sentiment_score += 12
-        elif total_zt >= 30:
-            sentiment_score += 6
+        # 5. 市场情绪 (10%) - 使用传入的全局市场情绪
+        if market_sentiment is not None:
+            scores['market_sentiment'] = market_sentiment
+        else:
+            # 兼容单股分析模式
+            scores['market_sentiment'] = self._calc_market_sentiment(all_df)
         
-        scores['market_sentiment'] = min(100, max(0, sentiment_score))
+        # 新闻情绪不作为维度，而是作为加减分项
+        # 默认0分（无影响），有负面新闻时扣分，有正面新闻时加分
+        scores['news_adjustment'] = 0.0
         
-        # 6. 新闻情绪 (10%) - 预留，后面在 analyze_all 时注入
-        scores['news_sentiment'] = 0.0
-        scores['news_penalty'] = 0.0
-        
-        # 总分
+        # 总分（五维加权）
         total = (
             scores['sealing_strength'] * self.WEIGHTS['sealing_strength'] +
             scores['sector_effect'] * self.WEIGHTS['sector_effect'] +
@@ -266,6 +279,165 @@ class LimitUpAnalyzer:
         else:
             return f"{Fore.RED}❌ 观望 - 连板可能性极低{Style.RESET_ALL}"
     
+    def _get_market_index_data(self) -> Dict:
+        """
+        获取大盘指数数据（上证指数、深证成指、创业板指、科创板指）
+        返回指数涨跌幅和成交量信息
+        """
+        market_data = {
+            'sh_change': 0,   # 上证涨跌幅
+            'sz_change': 0,   # 深证涨跌幅
+            'cy_change': 0,   # 创业板涨跌幅
+            'kc_change': 0,   # 科创板涨跌幅
+            'sh_volume_ratio': 1.0,  # 上证量比
+            'total_score': 50  # 默认中性
+        }
+        
+        try:
+            # 尝试获取上证指数数据
+            df_sh = self.fetcher.data_adapter.get_stock_data('000001')
+            if df_sh is not None and len(df_sh) >= 2:
+                latest = df_sh.iloc[-1]
+                prev = df_sh.iloc[-2]
+                market_data['sh_change'] = (latest['close'] - prev['close']) / prev['close'] * 100
+                
+                # 计算量比（今日成交量/昨日成交量）
+                if 'volume' in latest and 'volume' in prev and prev['volume'] > 0:
+                    market_data['sh_volume_ratio'] = latest['volume'] / prev['volume']
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️ 获取上证指数数据失败: {e}{Style.RESET_ALL}")
+        
+        try:
+            # 尝试获取深证成指数据
+            df_sz = self.fetcher.data_adapter.get_stock_data('399001')
+            if df_sz is not None and len(df_sz) >= 2:
+                latest = df_sz.iloc[-1]
+                prev = df_sz.iloc[-2]
+                market_data['sz_change'] = (latest['close'] - prev['close']) / prev['close'] * 100
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️ 获取深证成指数据失败: {e}{Style.RESET_ALL}")
+        
+        try:
+            # 尝试获取创业板指数据
+            df_cy = self.fetcher.data_adapter.get_stock_data('399006')
+            if df_cy is not None and len(df_cy) >= 2:
+                latest = df_cy.iloc[-1]
+                prev = df_cy.iloc[-2]
+                market_data['cy_change'] = (latest['close'] - prev['close']) / prev['close'] * 100
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️ 获取创业板指数据失败: {e}{Style.RESET_ALL}")
+        
+        try:
+            # 尝试获取科创板指数据（科创50）
+            df_kc = self.fetcher.data_adapter.get_stock_data('000688')
+            if df_kc is not None and len(df_kc) >= 2:
+                latest = df_kc.iloc[-1]
+                prev = df_kc.iloc[-2]
+                market_data['kc_change'] = (latest['close'] - prev['close']) / prev['close'] * 100
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️ 获取科创板指数据失败: {e}{Style.RESET_ALL}")
+        
+        return market_data
+    
+    def _calc_market_sentiment(self, all_df: pd.DataFrame) -> float:
+        """
+        计算全局市场情绪得分（所有股票共享）
+        基于大盘指数涨跌幅、成交量、涨停数量综合判断
+        """
+        score = 50  # 基础分
+        
+        # 1. 获取大盘指数数据
+        market_data = self._get_market_index_data()
+        
+        # 2. 大盘指数涨跌幅评分 (40%)
+        # 计算四大指数平均涨跌幅（上证、深证、创业板、科创板）
+        index_changes = [
+            market_data['sh_change'],
+            market_data['sz_change'],
+            market_data['cy_change'],
+            market_data['kc_change']
+        ]
+        # 过滤掉为0的指数（未获取到数据）
+        valid_changes = [c for c in index_changes if c != 0]
+        if valid_changes:
+            avg_index_change = sum(valid_changes) / len(valid_changes)
+        else:
+            avg_index_change = 0
+        
+        if avg_index_change >= 2:
+            score += 20  # 大盘大涨，情绪极好
+        elif avg_index_change >= 1:
+            score += 15
+        elif avg_index_change >= 0.5:
+            score += 10
+        elif avg_index_change >= 0:
+            score += 5
+        elif avg_index_change >= -0.5:
+            score -= 5
+        elif avg_index_change >= -1:
+            score -= 10
+        else:
+            score -= 15  # 大盘大跌，情绪低迷
+        
+        # 3. 成交量评分 (20%) - 量比
+        volume_ratio = market_data['sh_volume_ratio']
+        if volume_ratio >= 1.5:
+            score += 10  # 明显放量，情绪活跃
+        elif volume_ratio >= 1.2:
+            score += 7
+        elif volume_ratio >= 1.0:
+            score += 5
+        elif volume_ratio >= 0.8:
+            score += 2
+        else:
+            score -= 3  # 缩量，情绪低迷
+        
+        # 4. 涨停数量评分 (25%)
+        total_zt = len(all_df)
+        if total_zt >= 150:
+            score += 15  # 情绪极度高涨
+        elif total_zt >= 100:
+            score += 12
+        elif total_zt >= 70:
+            score += 9
+        elif total_zt >= 50:
+            score += 6
+        elif total_zt >= 30:
+            score += 3
+        elif total_zt < 20:
+            score -= 8  # 涨停太少，情绪低迷
+        
+        # 5. 连板高度评分 (15%)
+        if '连板数' in all_df.columns:
+            max_limit = all_df['连板数'].max()
+            avg_limit = all_df['连板数'].mean()
+            
+            # 最高连板数反映情绪热度
+            if max_limit >= 7:
+                score += 8  # 有7板股，情绪火热
+            elif max_limit >= 5:
+                score += 6
+            elif max_limit >= 3:
+                score += 3
+            
+            # 平均连板数
+            if avg_limit >= 2:
+                score += 4
+            elif avg_limit >= 1.5:
+                score += 2
+        
+        # 打印市场情绪详情
+        print(f"{Fore.CYAN}📊 市场情绪分析:{Style.RESET_ALL}")
+        print(f"   上证涨跌: {market_data['sh_change']:+.2f}%")
+        print(f"   深证涨跌: {market_data['sz_change']:+.2f}%")
+        print(f"   创业板涨跌: {market_data['cy_change']:+.2f}%")
+        print(f"   科创板涨跌: {market_data['kc_change']:+.2f}%")
+        print(f"   平均涨跌: {avg_index_change:+.2f}%")
+        print(f"   上证量比: {market_data['sh_volume_ratio']:.2f}")
+        print(f"   涨停数量: {total_zt}只")
+        
+        return min(100, max(0, round(score, 1)))
+    
     def analyze_all_limit_up(self) -> List[Dict]:
         """分析当日所有涨停股票（含新闻情绪检测）"""
         print(f"{Fore.CYAN}📊 正在获取当日涨停股票数据...{Style.RESET_ALL}")
@@ -277,10 +449,14 @@ class LimitUpAnalyzer:
             return []
 
         print(f"{Fore.GREEN}✅ 获取到 {len(limit_up_df)} 只涨停股票{Style.RESET_ALL}")
+        
+        # 计算全局市场情绪（所有股票共享）
+        market_sentiment = self._calc_market_sentiment(limit_up_df)
+        print(f"{Fore.CYAN}📊 当日市场情绪得分: {market_sentiment:.0f}{Style.RESET_ALL}")
 
         results = []
         for _, row in limit_up_df.iterrows():
-            scores = self.calc_scores(row, limit_up_df)
+            scores = self.calc_scores(row, limit_up_df, market_sentiment)
 
             result = {
                 'code': row['代码'],
@@ -313,9 +489,10 @@ class LimitUpAnalyzer:
                         r['limit_up_days']
                     )
                     r['news'] = news
-                    r['scores']['news_penalty'] = penalty
-                    r['scores']['news_sentiment'] = news['sentiment_score']
-                    # 修正总分：加分制
+                    # 新闻情绪作为加减分项，而不是维度
+                    # penalty 范围: -20 ~ +5
+                    r['scores']['news_adjustment'] = penalty
+                    # 修正总分：直接加减
                     r['scores']['total'] = round(r['scores']['total'] + penalty, 1)
                     # 重新评级
                     r['rating'] = self.get_rating(r['scores']['total'])
@@ -374,8 +551,8 @@ class LimitUpAnalyzer:
                     result['limit_up_days']
                 )
                 result['news'] = news
-                result['scores']['news_penalty'] = penalty
-                result['scores']['news_sentiment'] = news['sentiment_score']
+                # 新闻情绪作为加减分项
+                result['scores']['news_adjustment'] = penalty
                 result['scores']['total'] = round(result['scores']['total'] + penalty, 1)
                 result['rating'] = self.get_rating(result['scores']['total'])
                 result['recommendation'] = self.get_recommendation(result['scores']['total'])
@@ -407,7 +584,7 @@ class LimitUpAnalyzer:
         print(f"{Fore.WHITE}【综合评分】 {color}{total}/100 ({rating['label']}){Style.RESET_ALL}")
         print(f"{Fore.WHITE}【连板数】 {result['limit_up_days']}板{Style.RESET_ALL}\n")
         
-        print(f"{Fore.WHITE}【六维分析】{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}【五维分析】{Style.RESET_ALL}")
         bar_width = 30
         dimensions = [
             ('封板强度', scores['sealing_strength']),
@@ -415,7 +592,6 @@ class LimitUpAnalyzer:
             ('资金流向', scores['capital_flow']),
             ('技术形态', scores['technical_pattern']),
             ('市场情绪', scores['market_sentiment']),
-            ('新闻情绪', max(0, scores.get('news_sentiment', 0)))
         ]
 
         for dim_name, score in dimensions:
@@ -424,7 +600,13 @@ class LimitUpAnalyzer:
             score_color = Fore.GREEN if score >= self.THRESHOLDS['buy'] else (Fore.YELLOW if score >= self.THRESHOLDS['watch'] else Fore.WHITE)
             print(f"  {dim_name}: {bar} {score_color}{score:.0f}{Style.RESET_ALL}")
         
-        # 新闻预警
+        # 新闻调整
+        news_adjustment = result['scores'].get('news_adjustment', 0)
+        if news_adjustment != 0:
+            adj_color = Fore.GREEN if news_adjustment > 0 else Fore.RED
+            print(f"  {Fore.WHITE}新闻调整: {adj_color}{news_adjustment:+.1f}分{Style.RESET_ALL}")
+        
+        # 新闻详情
         news = result.get('news')
         if news:
             print(f"\n{Fore.WHITE}【新闻情绪】{Style.RESET_ALL}")
@@ -440,9 +622,6 @@ class LimitUpAnalyzer:
                     print(f"  {color_n}✅ {h}{Style.RESET_ALL}")
             else:
                 print(f"  {Fore.WHITE}  {news.get('news_summary', '')}{Style.RESET_ALL}")
-            penalty = result['scores'].get('news_penalty', 0)
-            if penalty != 0:
-                print(f"  {Fore.RED}   新闻情绪影响: {penalty:+.1f} 分{Style.RESET_ALL}")
 
         print(f"\n{Fore.WHITE}【操作建议】{Style.RESET_ALL}")
         print(f"  {result['recommendation']}\n")
