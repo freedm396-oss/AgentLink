@@ -129,10 +129,15 @@ def analyze_watchlist(analyzer: MorningStarAnalyzer, sector: str = None, top_n: 
         sectors_to_scan = watchlist
 
     print(f"📋 开始分析{'自选股池' + ('-' + sector if sector else '')}...")
-    total_core = sum(len(d['core']) for d in sectors_to_scan.values())
-    total_focus = sum(len(d['focus']) for d in sectors_to_scan.values())
+    total_core = sum(len(d.get('core', [])) for d in sectors_to_scan.values())
+    total_focus = sum(len(d.get('focus', [])) for d in sectors_to_scan.values())
     print(f"   core 标的: {total_core}只 | focus 标的: {total_focus}只")
     print(f"   数据源: {analyzer.data_adapter.source}")
+    
+    # 计算全局市场情绪（所有股票共享）
+    print(f"\n📊 计算全局市场情绪...")
+    market_sentiment = analyzer._calc_global_market_sentiment()
+    print(f"   市场情绪得分: {market_sentiment}/10")
     print("-" * 60)
 
     candidates = []
@@ -144,7 +149,7 @@ def analyze_watchlist(analyzer: MorningStarAnalyzer, sector: str = None, top_n: 
             stock_count += 1
             if stock_count % 20 == 0:
                 print(f"  进度: {stock_count}只已分析...")
-            result = analyzer.analyze_stock(code, name)
+            result = analyzer.analyze_stock(code, name, market_sentiment)
             if result and result['score'] >= 70:
                 result['sector'] = sector_name
                 result['is_core'] = (name, code) in data.get('core', [])
