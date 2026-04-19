@@ -104,7 +104,7 @@ class BreakoutHighAnalyzer:
         
         return breakouts
 
-    def calculate_score(self, breakout: Dict) -> Tuple[float, str]:
+    def calculate_score(self, breakout: Dict, market_data: Dict = None) -> Tuple[float, str]:
         """计算评分"""
         score = 0
         reasons = []
@@ -149,7 +149,7 @@ class BreakoutHighAnalyzer:
             reasons.append("短期动量良好(>5%)")
         elif momentum > 0:
             score += 10
-            reasons.append("短期价格上胀")
+            reasons.append("短期价格上涨")
         
         # 4. 形态质量得分 (0-15)
         if ratio > 0.05 and vol_ratio > 1.5:
@@ -162,10 +162,70 @@ class BreakoutHighAnalyzer:
             score += 5
             reasons.append("突破形态较弱")
         
-        # 5. 市场环境得分 (0-10)
-        score += 10
+        # 5. 市场环境得分 (0-10) - 基于突破时的市场数据
+        market_score = self._calculate_market_environment_score(breakout, market_data)
+        score += market_score['score']
+        if market_score['reason']:
+            reasons.append(market_score['reason'])
         
         return score, "; ".join(reasons)
+    
+    def _calculate_market_environment_score(self, breakout: Dict, market_data: Dict = None) -> Dict:
+        """
+        计算市场环境得分 (0-10分)
+        基于突破时的多项市场指标综合判断
+        """
+        score = 0
+        reason_parts = []
+        
+        # 指标1: 突破时的市场整体趋势 (0-4分)
+        # 使用5日动量作为市场趋势代理指标
+        momentum = breakout.get('momentum_5d', 0)
+        if momentum > 0.08:
+            score += 4
+            reason_parts.append("趋势极强")
+        elif momentum > 0.05:
+            score += 3
+            reason_parts.append("趋势强劲")
+        elif momentum > 0.02:
+            score += 2
+            reason_parts.append("趋势向上")
+        elif momentum > 0:
+            score += 1
+            reason_parts.append("趋势偏弱")
+        
+        # 指标2: 成交量配合度 (0-3分)
+        vol_ratio = breakout.get('volume_ratio', 1)
+        if vol_ratio > 2.5:
+            score += 3
+            reason_parts.append("量能充沛")
+        elif vol_ratio > 1.8:
+            score += 2
+            reason_parts.append("量能充足")
+        elif vol_ratio > 1.2:
+            score += 1
+            reason_parts.append("量能一般")
+        
+        # 指标3: 突破有效性 (0-3分)
+        # 突破幅度与量能的配合度
+        breakout_ratio = breakout.get('breakout_ratio', 0)
+        if breakout_ratio > 0.05 and vol_ratio > 1.5:
+            score += 3
+            reason_parts.append("突破有效")
+        elif breakout_ratio > 0.03 and vol_ratio > 1.2:
+            score += 2
+            reason_parts.append("突破较有效")
+        elif breakout_ratio > 0.02:
+            score += 1
+            reason_parts.append("突破较弱")
+        
+        # 构建原因字符串
+        if reason_parts:
+            reason = f"市场环境({'/'.join(reason_parts)})"
+        else:
+            reason = "市场环境不佳"
+        
+        return {'score': score, 'reason': reason}
 
     def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
         """分析单只股票"""
@@ -183,7 +243,7 @@ class BreakoutHighAnalyzer:
             
             # 取最后一次突破信号
             breakout = breakouts[-1]
-            score, reasons = self.calculate_score(breakout)
+            score, reasons = self.calculate_score(breakout, None)
             
             current = df.iloc[-1]
             
