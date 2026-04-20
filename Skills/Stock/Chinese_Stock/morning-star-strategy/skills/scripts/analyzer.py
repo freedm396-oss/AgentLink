@@ -238,6 +238,19 @@ class MorningStarAnalyzer:
         
         return score, "; ".join(reasons)
 
+    def _get_index_code(self, index_name: str) -> str:
+        """
+        获取指数代码（根据数据源自动调整格式）
+        """
+        codes = {
+            'sh': '000001', 'sz': '399001', 'cy': '399006', 'kc': '000688'
+        }
+        if self.data_adapter.source == 'baostock':
+            codes = {
+                'sh': 'sh.000001', 'sz': 'sz.399001', 'cy': 'sz.399006', 'kc': 'sh.000688'
+            }
+        return codes.get(index_name, '000001')
+    
     def _calc_global_market_sentiment(self) -> int:
         """
         计算全局市场情绪得分 (0-10分)
@@ -249,7 +262,7 @@ class MorningStarAnalyzer:
             index_changes = []
             
             # 获取上证指数数据
-            df_sh = self.data_adapter.get_stock_data('000001')
+            df_sh = self.data_adapter.get_stock_data(self._get_index_code('sh'))
             if df_sh is not None and len(df_sh) >= 2:
                 latest = df_sh.iloc[-1]
                 prev = df_sh.iloc[-2]
@@ -279,7 +292,7 @@ class MorningStarAnalyzer:
                         score -= 0.5
             
             # 获取深证成指数据
-            df_sz = self.data_adapter.get_stock_data('399001')
+            df_sz = self.data_adapter.get_stock_data(self._get_index_code('sz'))
             if df_sz is not None and len(df_sz) >= 2:
                 latest = df_sz.iloc[-1]
                 prev = df_sz.iloc[-2]
@@ -294,7 +307,7 @@ class MorningStarAnalyzer:
                     score -= 0.5
             
             # 获取创业板指数据
-            df_cy = self.data_adapter.get_stock_data('399006')
+            df_cy = self.data_adapter.get_stock_data(self._get_index_code('cy'))
             if df_cy is not None and len(df_cy) >= 2:
                 latest = df_cy.iloc[-1]
                 prev = df_cy.iloc[-2]
@@ -309,7 +322,7 @@ class MorningStarAnalyzer:
                     score -= 0.5
             
             # 获取科创板指数据
-            df_kc = self.data_adapter.get_stock_data('000688')
+            df_kc = self.data_adapter.get_stock_data(self._get_index_code('kc'))
             if df_kc is not None and len(df_kc) >= 2:
                 latest = df_kc.iloc[-1]
                 prev = df_kc.iloc[-2]

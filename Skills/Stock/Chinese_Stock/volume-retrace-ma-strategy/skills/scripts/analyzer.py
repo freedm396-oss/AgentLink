@@ -38,9 +38,27 @@ except ImportError:
 class VolumeRetraceAnalyzer:
     """缩量回踩均线分析器"""
     
+    # 评分权重配置（参考涨停板策略标准）
+    WEIGHTS = {
+        'retrace_quality': 0.25,     # 回踩质量 (25%)
+        'volume_shrink': 0.20,       # 缩量程度 (20%)
+        'trend_strength': 0.20,      # 趋势强度 (20%)
+        'stop_signal': 0.15,         # 止跌信号 (15%)
+        'support_strength': 0.15,    # 支撑强度 (15%)
+        'market_environment': 0.05,  # 市场环境 (5%)
+    }
+    
+    # 评分阈值（与涨停板策略一致）
+    THRESHOLDS = {
+        'strong_buy': 85,    # 极高
+        'buy': 75,           # 高
+        'watch': 65,         # 中等
+        'exclude': 55        # 低
+    }
+    
     def __init__(self, data_source: str = "auto"):
         self.name = "缩量回踩均线策略"
-        self.version = "v1.0.0"
+        self.version = "v1.1.0"
         self.win_rate = 0.62
         
         # 均线参数
@@ -48,18 +66,12 @@ class VolumeRetraceAnalyzer:
         self.volume_ma_period = 20
         self.volume_shrink_ratio = 0.5  # 缩量标准：低于均量50%
         
-        # 评分权重
-        self.weights = {
-            'ma_support': 0.30,
-            'volume_shrink': 0.25,
-            'price_stability': 0.20,
-            'trend_alignment': 0.15,
-            'market_environment': 0.10
-        }
-        
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源")
+        
+        # 缓存市场情绪
+        self._market_sentiment = None
 
     def calculate_ma(self, df: pd.DataFrame) -> pd.DataFrame:
         """计算均线"""
@@ -177,13 +189,183 @@ class VolumeRetraceAnalyzer:
             score += 5
             reasons.append("等待趋势确认")
         
-        # 5. 市场环境得分 (0-10)
-        score += 10
+        # 5. 市场环境得分 (0-10) - 实际计算
+        market_env_score = self._calc_market_environment()
+        score += int(market_env_score * 0.1)
+        if market_env_score >= 70:
+            reasons.append(f"市场环境良好({market_env_score:.0f}分)")
+        elif market_env_score >= 50:
+            reasons.append(f"市场环境中性({market_env_score:.0f}分)")
+        else:
+            reasons.append(f"市场环境偏弱({market_env_score:.0f}分)")
         
         return score, "; ".join(reasons)
+    
+    def _get_index_code(self, index_name: str) -> str:
+        """
+        获取指数代码（根据数据源自动调整格式）
+        """
+        codes = {
+            'sh': '000001', 'sz': '399001', 'cy': '399006', 'kc': '000688'
+        }
+        if self.data_adapter.source == 'baostock':
+            codes = {
+                'sh': 'sh.000001', 'sz': 'sz.399001', 'cy': 'sz.399006', 'kc': 'sh.000688'
+            }
+        return codes.get(index_name, '000001')
+    
+    def _get_market_index_data(self) -> Dict:
+        """
+        获取大盘指数数据（上证指数、深证成指、创业板指、科创板指）
+        返回指数涨跌幅和成交量信息
+        """
+        market_data = {
+            'sh_change': 0, 'sz_change': 0, 'cy_change': 0, 'kc_change': 0,
+            'sh_volume_ratio': 1.0, 'total_score': 50
+        }
+        
+        try:
+            df_sh = self.data_adapter.get_stock_data(self._get_index_code('sh'))
+            if df_sh is not None and len(df_sh) >= 2:
+                latest = df_sh.iloc[-1]
+                prev = df_sh.iloc[-2]
+                market_data['sh_change'] = (latest['close'] - prev['close']) / prev['close'] * 100
+                if 'volume' in latest and 'volume' in prev and prev['volume'] > 0:
+                    market_data['sh_volume_ratio'] = latest['volume'] / prev['volume']
+        except Exception:
+            pass
+        
+        try:
+            df_sz = self.data_adapter.get_stock_data(self._get_index_code('sz'))
+            if df_sz is not None and len(df_sz) >= 2:
+                latest = df_sz.iloc[-1]
+                prev = df_sz.iloc[-2]
+                market_data['sz_change'] = (latest['close'] - prev['close']) / prev['close'] * 100
+        except Exception:
+            pass
+        
+        try:
+            df_cy = self.data_adapter.get_stock_data(self._get_index_code('cy'))
+            if df_cy is not None and len(df_cy) >= 2:
+                latest = df_cy.iloc[-1]
+                prev = df_cy.iloc[-2]
+                market_data['cy_change'] = (latest['close'] - prev['close']) / prev['close'] * 100
+        except Exception:
+            pass
+        
+        try:
+            df_kc = self.data_adapter.get_stock_data(self._get_index_code('kc'))
+            if df_kc is not None and len(df_kc) >= 2:
+                latest = df_kc.iloc[-1]
+                prev = df_kc.iloc[-2]
+                market_data['kc_change'] = (latest['close'] - prev['close']) / prev['close'] * 100
+        except Exception:
+            pass
+        
+        return market_data
+    
+    def _calc_market_environment(self) -> float:
+        """
+        计算市场环境评分（参考涨停板策略）
+        基于大盘指数涨跌幅、成交量、趋势综合判断
+        返回0-100的评分
+        """
+        if self._market_sentiment is not None:
+            return self._market_sentiment
+        
+        score = 50  # 基础分
+        market_data = self._get_market_index_data()
+        
+        # 大盘指数涨跌幅评分 (40%)
+        index_changes = [market_data['sh_change'], market_data['sz_change'], 
+                        market_data['cy_change'], market_data['kc_change']]
+        valid_changes = [c for c in index_changes if c != 0]
+        if valid_changes:
+            avg_index_change = sum(valid_changes) / len(valid_changes)
+        else:
+            avg_index_change = 0
+        
+        if avg_index_change >= 2:
+            score += 20
+        elif avg_index_change >= 1:
+            score += 15
+        elif avg_index_change >= 0.5:
+            score += 10
+        elif avg_index_change >= 0:
+            score += 5
+        elif avg_index_change >= -0.5:
+            score -= 5
+        elif avg_index_change >= -1:
+            score -= 10
+        else:
+            score -= 15
+        
+        # 成交量评分 (30%)
+        volume_ratio = market_data['sh_volume_ratio']
+        if volume_ratio >= 1.5:
+            score += 15
+        elif volume_ratio >= 1.2:
+            score += 10
+        elif volume_ratio >= 1.0:
+            score += 5
+        elif volume_ratio >= 0.8:
+            score += 2
+        else:
+            score -= 5
+        
+        # 市场趋势评分 (30%)
+        try:
+            df_sh = self.data_adapter.get_stock_data(self._get_index_code('sh'))
+            if df_sh is not None and len(df_sh) >= 20:
+                df_sh['ma5'] = df_sh['close'].rolling(window=5).mean()
+                df_sh['ma10'] = df_sh['close'].rolling(window=10).mean()
+                df_sh['ma20'] = df_sh['close'].rolling(window=20).mean()
+                latest = df_sh.iloc[-1]
+                if latest['close'] > latest['ma5'] > latest['ma10'] > latest['ma20']:
+                    score += 15
+                elif latest['close'] > latest['ma5'] > latest['ma10']:
+                    score += 10
+                elif latest['close'] > latest['ma5']:
+                    score += 5
+                elif latest['close'] < latest['ma5'] < latest['ma10'] < latest['ma20']:
+                    score -= 10
+                elif latest['close'] < latest['ma5'] < latest['ma10']:
+                    score -= 5
+        except Exception:
+            pass
+        
+        final_score = min(100, max(0, round(score, 1)))
+        self._market_sentiment = final_score
+        return final_score
+    
+    def get_rating(self, score: float) -> Dict:
+        """获取评级（参考涨停板策略）"""
+        if score >= self.THRESHOLDS['strong_buy']:
+            return {'label': '极高', 'description': '缩量回踩信号强烈，重点关注'}
+        elif score >= self.THRESHOLDS['buy']:
+            return {'label': '高', 'description': '缩量回踩可能性大'}
+        elif score >= self.THRESHOLDS['watch']:
+            return {'label': '中等', 'description': '需结合盘面判断'}
+        elif score >= self.THRESHOLDS['exclude']:
+            return {'label': '低', 'description': '谨慎参与'}
+        else:
+            return {'label': '极低', 'description': '建议观望'}
+    
+    def get_recommendation(self, score: float) -> str:
+        """获取操作建议（参考涨停板策略）"""
+        if score >= self.THRESHOLDS['strong_buy']:
+            return "✅ 重点关注 - 缩量回踩信号强烈，反弹概率极大"
+        elif score >= self.THRESHOLDS['buy']:
+            return "✅ 关注 - 缩量回踩可能性大，可考虑建仓"
+        elif score >= self.THRESHOLDS['watch']:
+            return "⚠️ 观察 - 需结合明日开盘情况判断"
+        elif score >= self.THRESHOLDS['exclude']:
+            return "⚠️ 谨慎 - 回踩信号不明确，不建议参与"
+        else:
+            return "❌ 观望 - 未见明显回踩信号"
 
     def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
-        """分析单只股票"""
+        """分析单只股票（改进版，包含详细评分维度）"""
         try:
             df = self.data_adapter.get_stock_history(stock_code)
             if df is None or len(df) < 30:
@@ -199,18 +381,27 @@ class VolumeRetraceAnalyzer:
             signal = signals[-1]
             score, reasons = self.calculate_score(df, signal)
             
+            # 获取评级和建议
+            rating = self.get_rating(score)
+            recommendation = self.get_recommendation(score)
+            
             current = df.iloc[-1]
             
             return {
                 'code': stock_code,
                 'name': stock_name or stock_code,
                 'score': score,
+                'rating': rating,
+                'recommendation': recommendation,
                 'reasons': reasons,
                 'current_price': round(current['close'], 2),
                 'ma_value': round(signal['ma_value'], 2),
+                'ma_period': signal['ma_period'],
                 'volume_ratio': round(signal['volume_ratio'] * 100, 1),
+                'trend_aligned': signal['trend_aligned'],
                 'strategy': self.name,
-                'win_rate': self.win_rate
+                'win_rate': self.win_rate,
+                'market_environment': self._calc_market_environment()
             }
             
         except Exception as e:

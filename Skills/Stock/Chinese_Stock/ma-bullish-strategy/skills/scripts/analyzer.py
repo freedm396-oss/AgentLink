@@ -17,6 +17,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import warnings
+import time
 warnings.filterwarnings('ignore')
 
 # ── 路径设置（相对路径，基于脚本所在目录）────────────────────
@@ -38,6 +39,141 @@ except ImportError:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 
+class MarketEnvironment:
+    """市场环境评估（大盘/科创板/创业板等涨跌、涨停家数、成交量）"""
+    
+    def __init__(self):
+        self.index_data = {}
+        self.zt_count = 0
+        self.zt_pool_date = ''
+        self._load()
+    
+    def _load(self):
+        """加载市场环境数据"""
+        try:
+            import akshare as ak
+            today = datetime.now().strftime('%Y%m%d')
+            self.zt_pool_date = today
+            
+            # 获取今日涨停股数量
+            try:
+                zt_df = ak.stock_zt_pool_em(date=today)
+                self.zt_count = len(zt_df) if zt_df is not None and not zt_df.empty else 0
+            except:
+                self.zt_count = 0
+            
+            # 获取主要指数数据
+            index_codes = [
+                ('sh000300', '沪深300'),   # 000300
+                ('sh000001', '上证指数'),  # 000001  
+                ('sh000688', '科创50'),    # 000688
+                ('sz399001', '深证成指'),  # 399001
+                ('sz399006', '创业板指'), # 399006
+            ]
+            
+            end = datetime.now().strftime('%Y%m%d')
+            start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+            
+            for code, name in index_codes:
+                try:
+                    df = ak.stock_zh_index_daily(symbol=code)
+                    if df is not None and not df.empty:
+                        df['date'] = pd.to_datetime(df['date'])
+                        df = df[(df['date'] >= start) & (df['date'] <= end)]
+                        if not df.empty:
+                            self.index_data[name] = df.tail(5)
+                    time.sleep(0.1)
+                except:
+                    pass
+                    
+        except Exception as e:
+            print(f"[市场环境] 加载失败: {e}")
+    
+    def get_market_score(self) -> float:
+        """
+        市场环境综合评分 (0-100)
+        50分为中性，>60偏牛，<40偏弱
+        维度：指数涨跌(35分) + 涨停家数(35分) + 市场广度(30分)
+        """
+        if not self.index_data:
+            return 50
+        
+        best_changes = []
+        for name, df in self.index_data.items():
+            if len(df) < 2 or 'close' not in df.columns:
+                continue
+            latest_close = df['close'].iloc[-1]
+            prev_close = df['close'].iloc[-2]
+            if prev_close > 0:
+                change = (latest_close - prev_close) / prev_close * 100
+                best_changes.append(change)
+        
+        if not best_changes:
+            return 50
+        
+        # 1. 指数涨跌 (0-35分) — 看最强指数
+        best_change = max(best_changes)
+        if best_change >= 3.0:   idx = 35
+        elif best_change >= 2.0: idx = 32
+        elif best_change >= 1.5:  idx = 28
+        elif best_change >= 1.0:  idx = 25
+        elif best_change >= 0.5:  idx = 21
+        elif best_change >= 0.2:  idx = 17
+        elif best_change >= 0:    idx = 13
+        elif best_change >= -0.5: idx = 8
+        else:                     idx = 4
+        
+        # 2. 涨停家数 (0-35分)
+        zt = self.zt_count
+        if zt >= 200:   z = 35
+        elif zt >= 150: z = 32
+        elif zt >= 100: z = 28
+        elif zt >= 80:  z = 25
+        elif zt >= 60:  z = 21
+        elif zt >= 40:  z = 16
+        elif zt >= 20:  z = 11
+        elif zt >= 10:  z = 6
+        else:           z = 2
+        
+        # 3. 市场广度 (0-30分) — 看上涨指数占比和均值
+        avg_change = sum(best_changes) / len(best_changes)
+        up_count = sum(1 for c in best_changes if c > 0)
+        breadth = up_count / len(best_changes) * 100
+        
+        if avg_change >= 1.0 and breadth >= 80:  b = 30
+        elif avg_change >= 0.6 and breadth >= 60: b = 26
+        elif avg_change >= 0.3 and breadth >= 50: b = 22
+        elif avg_change >= 0.1 and breadth >= 50: b = 18
+        elif avg_change >= 0 and breadth >= 40:   b = 14
+        elif avg_change >= -0.3:                   b = 9
+        else:                                     b = 4
+        
+        # 三维度等权平均，映射到0-100
+        raw = (idx + z + b) / 3
+        # 当前数据: idx=21(创业板+1.43%), z=21(71家), b=14(60%广度+0.37%)
+        # raw = (21+21+14)/3 = 18.7 → 非常弱
+        
+        # 调整：50分中性基准，当前数据应给到45-55之间
+        # 加入基础分35确保不会太低
+        final = (35 + idx * 0.35 + z * 0.35 + b * 0.30)
+        
+        return round(min(max(final, 10), 85), 1)
+    
+    def get_summary(self) -> Dict:
+        """获取市场环境摘要"""
+        summary = {'涨停家数': self.zt_count, '指数评分': 0, '总分': 50}
+        
+        index_gains = []
+        for name, df in self.index_data.items():
+            if 'close' in df.columns and len(df) >= 2:
+                gain = (df['close'].iloc[-1] - df['close'].iloc[-2]) / df['close'].iloc[-2] * 100
+                index_gains.append((name, round(gain, 2)))
+        
+        summary['指数涨跌'] = index_gains
+        summary['总分'] = self.get_market_score()
+        return summary
+
+
 class MABullishAnalyzer:
     """均线多头排列分析器"""
 
@@ -50,11 +186,11 @@ class MABullishAnalyzer:
 
         # 评分权重
         self.weights = {
-            'ma_arrangement': 0.35,
-            'price_position': 0.20,
-            'volume_trend': 0.20,
+            'ma_arrangement': 0.30,
+            'price_position': 0.15,
+            'volume_trend': 0.15,
             'trend_strength': 0.15,
-            'market_environment': 0.10
+            'market_environment': 0.25
         }
 
         if analysis_date:
@@ -65,6 +201,9 @@ class MABullishAnalyzer:
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源，请安装akshare、tushare、baostock或yfinance")
+        
+        # 全局市场环境（只加载一次）
+        self.market_env = MarketEnvironment()
 
     def calculate_ma(self, df: pd.DataFrame) -> pd.DataFrame:
         """计算均线"""
@@ -105,95 +244,175 @@ class MABullishAnalyzer:
         return latest['volume'] >= vol_ma * ratio
 
     def score_ma_arrangement(self, df: pd.DataFrame) -> float:
-        """均线排列评分 0-100"""
+        """均线排列评分 0-100 — 更严格的评判标准"""
         if not self.is_ma_bullish(df):
             return 0
+        
         latest = df.iloc[-1]
         ma_s = latest[f'ma{self.ma_short}']
         ma_m = latest[f'ma{self.ma_mid}']
         ma_l = latest[f'ma{self.ma_long}']
-        # 发散程度
+        
+        # 发散程度（很重要）
         spread = (ma_s - ma_l) / ma_l * 100
-        if spread > 15:
-            return 100
-        elif spread > 10:
-            return 90
-        elif spread > 5:
-            return 80
+        
+        # 均线角度（稳定性）
+        if len(df) < 20:
+            return 0
+        ma20_series = df[f'ma{self.ma_long}'].tail(10)
+        ma20_slope = (ma20_series.iloc[-1] - ma20_series.iloc[0]) / ma20_series.iloc[0] * 100 if ma20_series.iloc[0] > 0 else 0
+        
+        # 综合评分
+        score = 0
+        # spread 评分 (0-60)
+        if spread >= 20:
+            score += 60
+        elif spread >= 15:
+            score += 52
+        elif spread >= 10:
+            score += 44
+        elif spread >= 7:
+            score += 36
+        elif spread >= 5:
+            score += 28
+        elif spread >= 3:
+            score += 20
         else:
-            return 70
+            score += 12  # spread太小，不够强劲
+        
+        # MA20角度评分 (0-40)
+        if ma20_slope >= 5:
+            score += 40
+        elif ma20_slope >= 3:
+            score += 34
+        elif ma20_slope >= 1:
+            score += 28
+        elif ma20_slope >= 0:
+            score += 20
+        else:
+            score += 8  # 均线向下，不强
+        
+        return min(score, 100)
 
     def score_price_position(self, df: pd.DataFrame) -> float:
-        """价格位置评分 0-100"""
+        """价格位置评分 0-100 — 加入远离均线的风险评估"""
         if len(df) < self.ma_long:
             return 0
+        
         latest = df.iloc[-1]
         ma_l = latest[f'ma{self.ma_long}']
         if pd.isna(ma_l) or ma_l == 0:
             return 0
+        
         position = (latest['close'] - ma_l) / ma_l * 100
-        if position > 15:
-            return 100
-        elif position > 10:
-            return 90
-        elif position > 5:
-            return 80
-        elif position > 0:
+        
+        # 价格在MA20上方太远=追高风险，太近=支撑弱
+        if position >= 25:
+            return 60  # 追高风险大
+        elif position >= 20:
             return 70
+        elif position >= 15:
+            return 80  # 适中
+        elif position >= 10:
+            return 75
+        elif position >= 5:
+            return 70
+        elif position >= 3:
+            return 55  # 离MA20太近，支撑弱
+        elif position >= 0:
+            return 40
         else:
-            return 30
+            return 20  # 在MA20下方
 
     def score_volume_trend(self, df: pd.DataFrame) -> float:
         """成交量趋势评分 0-100"""
-        if len(df) < 5:
-            return 0
-        recent_vol = df['volume'].tail(5).mean()
-        older_vol = df['volume'].iloc[-10:-5].mean() if len(df) >= 10 else recent_vol
-        if older_vol == 0:
-            return 50
-        ratio = recent_vol / older_vol
-        if ratio >= 1.5:
-            return 100
-        elif ratio >= 1.3:
-            return 85
-        elif ratio >= 1.2:
-            return 70
-        elif ratio >= 1.0:
-            return 60
-        else:
-            return 40
-
-    def score_trend_strength(self, df: pd.DataFrame) -> float:
-        """趋势强度评分 0-100（基于斜率）"""
         if len(df) < 10:
             return 0
+        
+        recent_vol = df['volume'].tail(5).mean()
+        older_vol = df['volume'].iloc[-10:-5].mean() if len(df) >= 10 else recent_vol
+        vol_ma20 = df['volume'].rolling(window=20).mean().iloc[-1]
+        
+        if older_vol == 0 or pd.isna(vol_ma20):
+            return 30
+        
+        ratio_recent = recent_vol / older_vol
+        ratio_ma = recent_vol / vol_ma20 if vol_ma20 > 0 else 1
+        
+        # 综合评分：既要看量能是否放大，也要看是否在均量附近健康放量
+        if ratio_recent >= 1.8 and ratio_ma >= 1.3:
+            return 90  # 放量健康
+        elif ratio_recent >= 1.5 and ratio_ma >= 1.1:
+            return 78
+        elif ratio_recent >= 1.2 and ratio_ma >= 0.9:
+            return 65  # 量能温和
+        elif ratio_recent >= 1.0 and ratio_ma >= 0.7:
+            return 50  # 量能偏低
+        elif ratio_recent < 0.8:
+            return 35  # 缩量
+        else:
+            return 55
+
+    def score_trend_strength(self, df: pd.DataFrame) -> float:
+        """趋势强度评分 0-100（基于20日斜率）"""
+        if len(df) < 20:
+            return 0
+        
         prices = df['close'].tail(20).values
         x = np.arange(len(prices))
         slope = np.polyfit(x, prices, 1)[0]
         avg_price = np.mean(prices)
+        
         if avg_price == 0:
             return 0
-        slope_pct = slope / avg_price * 100
-        if slope_pct > 0.5:
-            return 100
-        elif slope_pct > 0.3:
-            return 85
-        elif slope_pct > 0.1:
+        
+        slope_pct = slope / avg_price * 100 * 20  # 换算为20日斜率
+        
+        if slope_pct >= 15:
+            return 95
+        elif slope_pct >= 10:
+            return 82
+        elif slope_pct >= 6:
             return 70
-        elif slope_pct > 0:
-            return 60
-        else:
+        elif slope_pct >= 3:
+            return 58
+        elif slope_pct >= 1:
+            return 45
+        elif slope_pct >= 0:
             return 30
+        else:
+            return 15
 
     def score_market_environment(self, df: pd.DataFrame) -> float:
-        """市场环境评分 0-100（基于大盘指数）"""
-        # 简化版：使用自身的均线状态代表大盘环境
+        """市场环境评分 0-100（基于真实大盘数据）"""
+        market_score = self.market_env.get_market_score()
+        
+        # 结合自身与大盘的关系调整
         if len(df) < self.ma_long:
-            return 50
-        df_ma = self.calculate_ma(df)
-        if self.is_ma_bullish(df_ma):
-            return 100
-        return 40
+            return market_score * 0.5
+        
+        # 个股是否跑赢大盘
+        latest = df.iloc[-1]
+        ma_l = latest[f'ma{self.ma_long}']
+        if pd.isna(ma_l) or ma_l == 0:
+            return market_score * 0.5
+        
+        stock_pos = (latest['close'] - ma_l) / ma_l * 100
+        
+        # 若个股在MA20上方很远且市场环境好=加强
+        # 若市场差=削弱
+        if market_score >= 60:  # 市场好
+            if stock_pos >= 10:
+                return min(market_score + 10, 100)
+            else:
+                return market_score
+        elif market_score <= 35:  # 市场差
+            if stock_pos >= 15:
+                return market_score + 8  # 独立走强
+            else:
+                return max(market_score - 10, 5)
+        else:
+            return market_score
 
     def calculate_total_score(self, df: pd.DataFrame) -> float:
         """计算总分"""
@@ -234,12 +453,23 @@ class MABullishAnalyzer:
 
             if is_bullish:
                 result['score'] = round(self.calculate_total_score(df), 2)
+                
+                # 补充详细信息
+                latest = df.iloc[-1]
+                result['current_price'] = round(float(latest['close']), 2)
+                result['ma_status'] = f"MA{self.ma_short}/{self.ma_mid}/{self.ma_long}多头排列"
+                result['trend_strength'] = f"{self.score_trend_strength(df):.0f}分"
+                
+                # 市场环境摘要
+                market = self.market_env.get_summary()
+                result['market_info'] = market
+                
                 result['signals'] = {
-                    'ma_arrangement': self.score_ma_arrangement(df),
-                    'price_position': self.score_price_position(df),
-                    'volume_trend': self.score_volume_trend(df),
-                    'trend_strength': self.score_trend_strength(df),
-                    'market_environment': self.score_market_environment(df),
+                    'ma_arrangement': round(self.score_ma_arrangement(df), 1),
+                    'price_position': round(self.score_price_position(df), 1),
+                    'volume_trend': round(self.score_volume_trend(df), 1),
+                    'trend_strength': round(self.score_trend_strength(df), 1),
+                    'market_environment': round(self.score_market_environment(df), 1),
                 }
 
             return result
@@ -275,7 +505,8 @@ class MABullishAnalyzer:
 
             try:
                 result = self.analyze_stock(code, name)
-                if result['is_bullish'] and result['score'] >= 70:
+                # 提高阈值到72分，避免分数通胀
+                if result['is_bullish'] and result['score'] >= 72:
                     candidates.append(result)
             except Exception:
                 continue

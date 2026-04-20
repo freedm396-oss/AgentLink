@@ -61,9 +61,10 @@ def scan_all_stocks(analyzer: VolumeExtremeAnalyzer, top_n: int = 20) -> List[Di
         
         # 分析
         result = analyzer.analyze_stock(stock_code, stock_name)
-        if result and result['score'] >= 70:
+        if result and result['score'] >= 60:  # 降低阈值以发现更多候选
             candidates.append(result)
-            print(f"  ✅ {stock_name}({stock_code}): {result['score']}分")
+            rating = result.get('rating', {}).get('label', '')
+            print(f"  ✅ {stock_name}({stock_code}): {result['score']:.1f}分 [{rating}]")
     
     # 排序
     candidates.sort(key=lambda x: x['score'], reverse=True)
@@ -143,11 +144,12 @@ def analyze_watchlist(analyzer: VolumeExtremeAnalyzer, sector: str = None, top_n
             if stock_count % 20 == 0:
                 print(f"  进度: {stock_count}只已分析...")
             result = analyzer.analyze_stock(code, name)
-            if result and result['score'] >= 70:
+            if result and result['score'] >= 60:  # 降低阈值
                 result['sector'] = sector_name
                 result['is_core'] = (name, code) in data.get('core', [])
                 candidates.append(result)
-                print(f"  ✅ [{tag}{sector_name}] {name}({code}): {result['score']}分")
+                rating = result.get('rating', {}).get('label', '')
+                print(f"  ✅ [{tag}{sector_name}] {name}({code}): {result['score']:.1f}分 [{rating}]")
 
     candidates.sort(key=lambda x: x['score'], reverse=True)
     print(f"\n分析完成，共发现 {len(candidates)} 只符合条件的股票")
@@ -155,7 +157,7 @@ def analyze_watchlist(analyzer: VolumeExtremeAnalyzer, sector: str = None, top_n
 
 
 def print_results(results: List[Dict], title: str = "扫描结果"):
-    """打印结果"""
+    """打印结果（改进版，显示五维评分）"""
     print("\n" + "="*80)
     print(f"成交量地量见底策略 - {title}")
     print(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -171,18 +173,48 @@ def print_results(results: List[Dict], title: str = "扫描结果"):
         print("  - 未出现企稳信号")
         return
     
+    # 打印市场环境
+    if results and 'market_environment' in results[0]:
+        market_env = results[0]['market_environment']
+        env_emoji = '🟢' if market_env >= 70 else '🟡' if market_env >= 50 else '🔴'
+        print(f"📊 市场环境评分: {market_env:.0f}/100 {env_emoji}")
+        print()
+    
     print(f"发现 {len(results)} 只符合条件的股票")
     print()
     
     for i, r in enumerate(results, 1):
-        emoji = '🔥' if r['score'] >= 85 else '✅' if r['score'] >= 75 else '👀'
-        print(f"{emoji} {i}. {r['stock_name']}({r['stock_code']})")
-        print(f"   综合得分: {r['score']}分 | 信号: {r['signal']}")
-        print(f"   当前价: {r['current_price']}元")
-        print(f"   成交量比: {r['volume_ratio']} ({r['volume_status']})")
-        print(f"   价格偏离: -{r['price_deviation']}%")
-        print(f"   企稳信号: {r['stability_signal']}")
-        print(f"   后续走势: {r['follow_up']}")
+        score = r['score']
+        emoji = '🔥' if score >= 85 else '✅' if score >= 75 else '👀' if score >= 65 else '⚠️'
+        rating = r.get('rating', {}).get('label', '未知')
+        
+        print(f"{emoji} #{i} {r['name']}({r['code']})")
+        print(f"   综合得分: {score:.1f}分 | 评级: {rating}")
+        
+        # 打印五维评分
+        if 'scores' in r:
+            scores = r['scores']
+            bar_width = 20
+            dimensions = [
+                ('地量程度', scores.get('volume_extreme', 0)),
+                ('价格位置', scores.get('price_position', 0)),
+                ('企稳信号', scores.get('stability_signal', 0)),
+                ('后续确认', scores.get('follow_up', 0)),
+                ('市场环境', scores.get('market_environment', 0)),
+            ]
+            print(f"   五维分析:")
+            for dim_name, dim_score in dimensions:
+                filled = int(dim_score / 100 * bar_width)
+                bar = "█" * filled + "░" * (bar_width - filled)
+                print(f"      {dim_name}: {bar} {dim_score:.0f}")
+        
+        print(f"   当前价: {r['current_price']}元 | 地量日期: {r.get('extreme_date', 'N/A')}")
+        print(f"   成交量比: {r['volume_ratio']}% | 价格位置: {r.get('price_position', 0):.1f}%")
+        print(f"   地量后涨跌: {r['from_extreme_change']:+.2f}%")
+        
+        if 'recommendation' in r:
+            print(f"   建议: {r['recommendation']}")
+        
         print()
     
     print("="*80)

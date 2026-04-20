@@ -123,13 +123,14 @@ def analyze_watchlist(analyzer: MACDDivergenceAnalyzer, sector: str = None, top_
         sectors_to_scan = watchlist
 
     print(f"📋 开始分析{'自选股池' + ('-' + sector if sector else '')}...")
-    total_core = sum(len(d['core']) for d in sectors_to_scan.values())
-    total_focus = sum(len(d['focus']) for d in sectors_to_scan.values())
+    total_core = sum(len(d.get('core', [])) for d in sectors_to_scan.values())
+    total_focus = sum(len(d.get('focus', [])) for d in sectors_to_scan.values())
     print(f"   core 标的: {total_core}只 | focus 标的: {total_focus}只")
     print(f"   数据源: {analyzer.data_adapter.source}")
     print("-" * 60)
 
     candidates = []
+    seen_codes = set()  # 去重
     stock_count = 0
     for sector_name, data in sectors_to_scan.items():
         all_stocks = data.get('core', []) + data.get('focus', [])
@@ -138,8 +139,11 @@ def analyze_watchlist(analyzer: MACDDivergenceAnalyzer, sector: str = None, top_
             stock_count += 1
             if stock_count % 20 == 0:
                 print(f"  进度: {stock_count}只已分析...")
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
             result = analyzer.analyze_stock(code, name)
-            if result and result['score'] >= 75:
+            if result and result['score'] >= 65:
                 result['sector'] = sector_name
                 result['is_core'] = (name, code) in data.get('core', [])
                 candidates.append(result)
@@ -150,16 +154,22 @@ def analyze_watchlist(analyzer: MACDDivergenceAnalyzer, sector: str = None, top_
     return candidates[:top_n]
 
 
-def print_report(results: List[Dict], title: str = "扫描报告"):
+def print_report(results: List[Dict], title: str = "扫描报告", market_env=None):
     """打印报告"""
     print("\n" + "="*80)
     print(f"MACD底背离策略 - {title}")
     print(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    if market_env:
+        summary = market_env.get_summary()
+        index_str = ', '.join([f"{n}{g:+.2f}%" for n, g in summary.get('指数涨跌', [])])
+        print(f"📊 市场环境: 涨停{summary['涨停家数']}家 | 市场评分{summary['总分']}分 | {index_str}")
+    
     print("="*80)
     print()
     
     if not results:
-        print("未发现符合条件的股票")
+        print("未发现符合条件的股票（阈值: 65分）")
         print()
         print("说明：")
         print("  - 当前市场无MACD底背离信号")
@@ -168,20 +178,37 @@ def print_report(results: List[Dict], title: str = "扫描报告"):
         print("  - 未出现止跌K线形态")
         return
     
-    print(f"发现 {len(results)} 只符合条件的股票")
+    print(f"发现 {len(results)} 只符合条件的股票（阈值: 65分）")
     print()
     
     for i, r in enumerate(results, 1):
-        emoji = '🔥' if r['score'] >= 85 else '✅' if r['score'] >= 75 else '👀'
+        emoji = '🔥' if r['score'] >= 78 else '✅' if r['score'] >= 65 else '👀'
         print(f"{emoji} {i}. {r['stock_name']}({r['stock_code']})")
         print(f"   综合得分: {r['score']}分 | 信号: {r['signal']}")
-        print(f"   背离类型: {r['divergence_type']}")
+        print(f"   当前价: {r['current_price']}元 (今日{r.get('price_change_pct', 0):+.2f}%)")
         print(f"   价格低点: {r['price_low']}元 (前低{r['prev_price_low']}元)")
         print(f"   MACD低点: {r['macd_low']} (前低{r['prev_macd_low']})")
-        print(f"   MACD金叉: {'已确认' if r['golden_cross'] else '未确认'}")
-        print(f"   成交量放大: {r['volume_increase']}%")
-        print(f"   K线形态: {r['candlestick']}")
-        print(f"   支撑位置: {r['support_level']}")
+        print(f"   MACD金叉: {'✅已确认' if r['golden_cross'] else '❌未确认'}")
+        print(f"   成交量: {r['volume_increase']}% (相对均量)")
+        print(f"   K线形态: {r['candlestick']} | 支撑: {r['support_level']}元")
+        sd = r.get('score_details', {})
+        mkt = sd.get('market_environment', '?')
+        # 权重配置（与分析器保持一致）
+        w = {
+            'divergence_strength': 0.25,
+            'macd_golden_cross': 0.20,
+            'volume_confirm': 0.20,
+            'price_stability': 0.15,
+            'market_environment': 0.20
+        }
+        # 各维度加权贡献
+        d_s  = sd.get('divergence', 0) * w['divergence_strength']
+        gc_s = sd.get('golden_cross', 0) * w['macd_golden_cross']
+        v_s  = sd.get('volume', 0) * w['volume_confirm']
+        p_s  = sd.get('price_stability', 0) * w['price_stability']
+        mk_s = (mkt * w['market_environment']) if isinstance(mkt, (int, float)) else 0
+        print(f"   评分明细(加权): 背离:{d_s:.1f} + 金叉:{gc_s:.1f} + 量能:{v_s:.1f} + 稳定:{p_s:.1f} + 市场:{mk_s:.1f}")
+        print(f"   原始分项: 背离:{sd.get('divergence','?')} + 金叉:{sd.get('golden_cross','?')} + 量能:{sd.get('volume','?')} + 稳定:{sd.get('price_stability','?')} (满分100)")
         print()
     
     print("="*80)
@@ -221,11 +248,11 @@ def main():
     if args.scan:
         # 全市场扫描
         results = scan_all_stocks(analyzer, top_n=args.top)
-        print_report(results, "全市场扫描")
+        print_report(results, "全市场扫描", analyzer.market_env)
     
     elif args.sector:
         results = analyze_sector(analyzer, args.sector)
-        print_report(results, f"{args.sector}板块分析")
+        print_report(results, f"{args.sector}板块分析", analyzer.market_env)
     
     elif args.list_pools:
         watchlist = _load_watchlist()
@@ -241,13 +268,13 @@ def main():
             results = analyze_watchlist(analyzer, sector=None, top_n=args.top)
         else:
             results = analyze_watchlist(analyzer, sector=args.pool, top_n=args.top)
-        print_report(results, f"自选股池-{args.pool}板块" if args.pool != 'all' else "全自选股池")
+        print_report(results, f"自选股池-{args.pool}板块" if args.pool != 'all' else "全自选股池", analyzer.market_env)
     
     elif args.stock:
         # 单只股票分析
         result = analyzer.analyze_stock(args.stock, args.name)
         if result:
-            print_report([result], "单股分析")
+            print_report([result], "单股分析", analyzer.market_env)
         else:
             print(f"{args.stock} 不符合MACD底背离条件")
             print()

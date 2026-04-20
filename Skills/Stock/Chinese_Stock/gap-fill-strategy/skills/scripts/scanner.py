@@ -129,8 +129,8 @@ def analyze_watchlist(analyzer: GapFillAnalyzer, sector: str = None, top_n: int 
         title = "全自选股池"
 
     print(f"📋 开始分析 {title}...")
-    total_core = sum(len(d['core']) for d in sectors_to_scan.values())
-    total_focus = sum(len(d['focus']) for d in sectors_to_scan.values())
+    total_core = sum(len(d.get('core', [])) for d in sectors_to_scan.values())
+    total_focus = sum(len(d.get('focus', [])) for d in sectors_to_scan.values())
     print(f"   core 标的: {total_core}只 | focus 标的: {total_focus}只")
     print(f"   数据源: {analyzer.data_adapter.source}")
     print("-" * 60)
@@ -145,7 +145,7 @@ def analyze_watchlist(analyzer: GapFillAnalyzer, sector: str = None, top_n: int 
             if stock_count % 20 == 0:
                 print(f"  进度: {stock_count}只已分析...")
             result = analyzer.analyze_stock(code, name)
-            if result and result['score'] >= 70:
+            if result and result['score'] >= 55:
                 result['sector'] = sector_name
                 result['is_core'] = (name, code) in data.get('core', [])
                 candidates.append(result)
@@ -186,6 +186,27 @@ def print_results(results: List[Dict], title: str = "扫描结果"):
         print(f"   缺口区间: {r['gap_low']} - {r['gap_high']}元")
         print(f"   回踩确认: {'是' if r['pullback_confirmed'] else '否'}")
         print(f"   趋势方向: {r['trend_direction']}")
+        
+        # 显示详细评分维度
+        details = r.get('details', {})
+        if details:
+            print(f"   【五维评分明细】")
+            gap = details.get('gap', {})
+            pullback = details.get('pullback', {})
+            trend = details.get('trend', {})
+            follow_up = details.get('follow_up', {})
+            market = details.get('market', {})
+            
+            if gap:
+                print(f"      缺口质量: {gap.get('score', 0)}分 ({gap.get('quality', '未知')})")
+            if pullback:
+                print(f"      回踩确认: {pullback.get('score', 0)}分 ({pullback.get('status', '未知')})")
+            if trend:
+                print(f"      趋势配合: {trend.get('score', 0)}分 ({trend.get('direction', '未知')})")
+            if follow_up:
+                print(f"      后续走势: {follow_up.get('score', 0)}分 ({follow_up.get('trend', '未知')})")
+            if market:
+                print(f"      市场环境: {market.get('score', 0)}分")
         print()
     
     print("="*80)

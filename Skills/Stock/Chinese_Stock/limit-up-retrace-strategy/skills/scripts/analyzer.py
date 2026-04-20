@@ -1,88 +1,99 @@
-import sys
-import os
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+涨停板首次回调策略分析器
+"""
 
+import os
+import sys
+
+# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _SKILL_DIR = os.path.dirname(_SCRIPT_DIR)
 _SKILL_ROOT = os.path.dirname(_SKILL_DIR)
 _BASE_DIR = os.path.dirname(_SKILL_ROOT)
 
 if _SKILL_ROOT not in sys.path:
-if _SCRIPT_DIR not in sys.path:
-
-#!/usr/bin/env python3
-"""
-涨停板首次回调策略分析器
-"""
-
-# ── 路径设置（相对路径，基于脚本所在目录）────────────────────
-
     sys.path.insert(0, _SKILL_ROOT)
+if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
-
-# sys.path dynamically set below
 
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-import yaml
 
 # 导入数据源适配器
 try:
     from skills.scripts.data_source_adapter import DataSourceAdapter
 except ImportError:
-    # sys.path dynamically set below
     from skills.scripts.data_source_adapter import DataSourceAdapter
 
 class LimitUpRetraceAnalyzer:
     """涨停板首次回调分析器"""
     
-    # 默认权重（当配置文件加载失败时使用）
-    DEFAULT_WEIGHTS = {
-        'limit_up_quality': 0.25,
-        'retrace_quality': 0.20,
-        'support_strength': 0.20,
-        'volume_shrink': 0.20,
-        'stop_signal': 0.15
-    }
+    # 涨停回调综合评分体系（满分100）
+    # 回调幅度(35) + 缩量整理(25) + 止跌信号(20) + 近期强度(20)
+    # 评分维度:
+    #   1. 回调幅度得分 (35分) - 回调8%-15%最佳，过深过浅都不好
+    #   2. 缩量得分 (25分) - 缩量30%-70%最佳
+    #   3. 止跌信号得分 (20分) - 小阳线/锤子线/十字星
+    #   4. 近期强度得分 (20分) - 回调浅+距涨停近
+    # 信号阈值: >=85分=强烈买入, >=75分=买入, >=65分=关注
 
     def __init__(self, data_source: str = "auto"):
         self.name = "涨停板首次回调策略"
-        self.version = "v1.0.0"
-
-        # 从 scoring_weights.yaml 读取评分权重
-        self.weights = self._load_weights()
+        self.version = "v2.0.0"
 
         # 初始化数据源
         self.data_adapter = DataSourceAdapter(data_source)
         if not self.data_adapter.data_source:
             raise RuntimeError("没有可用的数据源")
 
-    def _load_weights(self) -> Dict[str, float]:
-        """
-        从 scoring_weights.yaml 加载评分权重
-        若加载失败，打印警告并使用 DEFAULT_WEIGHTS
-        """
-        weights_path = os.path.join(_SKILL_ROOT, 'config', 'scoring_weights.yaml')
-        try:
-            with open(weights_path, 'r', encoding='utf-8') as f:
-                cfg = yaml.safe_load(f)
-            weights_data = cfg.get('weights', {})
-            # 转换为 float
-            weights = {k: float(v) for k, v in weights_data.items()}
-            total = sum(weights.values())
-            total_pct = total * 100
-            if abs(total_pct - 100.0) > 0.1:
-                print(f"[配置警告] scoring_weights.yaml 权重总和不等于 100% ({total_pct:.1f}%)，使用默认值")
-                return dict(self.DEFAULT_WEIGHTS)
-            print(f"[配置加载] scoring_weights.yaml OK, weights={ {k: f'{v*100:.0f}%' for k, v in weights.items()} }")
-            return weights
-        except FileNotFoundError:
-            print(f"[配置警告] scoring_weights.yaml 未找到，使用默认权重")
-            return dict(self.DEFAULT_WEIGHTS)
-        except Exception as e:
-            print(f"[配置警告] scoring_weights.yaml 加载失败: {e}，使用默认权重")
-            return dict(self.DEFAULT_WEIGHTS)
+    def _calculate_retrace_score(self, retrace_pct: float) -> float:
+        """回调幅度得分 (0-35分) 回调8%-15%最佳"""
+        if 8 <= retrace_pct <= 15:
+            return 35
+        elif retrace_pct > 15:
+            return max(20, 35 - (retrace_pct - 15) * 1.5)
+        elif 5 <= retrace_pct < 8:
+            return 20 + (retrace_pct - 5) * 2  # 20-26
+        else:
+            return max(0, retrace_pct * 3)  # 0-15
+
+    def _calculate_shrink_score(self, shrink_pct: float) -> float:
+        """缩量得分 (0-25分) 缩量30%-70%最佳"""
+        if 30 <= shrink_pct <= 70:
+            return 25
+        elif shrink_pct > 70:
+            return min(30, 25 + (shrink_pct - 70) * 0.1)
+        elif 0 <= shrink_pct < 30:
+            return shrink_pct * 0.7  # 0-21
+        else:  # 放量为负分
+            return max(-10, shrink_pct * 0.3)
+
+    def _calculate_stop_signal_score(self, stop_signal_info: Dict) -> float:
+        """止跌信号得分 (0-20分)"""
+        signal_type = stop_signal_info.get('signal_type', '无明显信号')
+        if signal_type == '锤子线':
+            return 20
+        elif signal_type == '十字星':
+            return 17
+        elif signal_type == '小阳线':
+            return 15
+        else:
+            return 8
+
+    def _calculate_recent_strength_score(self, retrace_pct: float, days_since_zt: int) -> float:
+        """近期强度得分 (0-20分) 回调浅+距涨停近的更好"""
+        if retrace_pct <= 10 and days_since_zt <= 3:
+            return 20
+        elif retrace_pct <= 15 and days_since_zt <= 5:
+            return 15
+        elif retrace_pct <= 20 and days_since_zt <= 7:
+            return 10
+        else:
+            return 5
     
     def analyze_stock(self, stock_code: str, stock_name: str = None) -> Optional[Dict]:
         """
@@ -114,30 +125,28 @@ class LimitUpRetraceAnalyzer:
             if not retrace_info['is_retracing']:
                 return None
             
-            # 3. 分析支撑位
-            support_info = self._analyze_support(df, limit_up_info, retrace_info)
+            # 3. 分析成交量（缩量程度）
+            volume_info = self._analyze_volume(df, limit_up_info, retrace_info)
             
-            # 4. 分析成交量
-            volume_info = self._analyze_volume(df, retrace_info)
-            
-            # 5. 分析止跌信号
+            # 4. 分析止跌信号
             stop_signal_info = self._analyze_stop_signal(df)
             
-            # 6. 评估涨停质量
-            limit_up_quality = self._evaluate_limit_up_quality(limit_up_info)
-            
-            # 计算综合得分
-            total_score = self._calculate_score(
-                limit_up_quality, retrace_info, support_info, 
-                volume_info, stop_signal_info
+            # 5. 新评分体系计算综合得分
+            retrace_score = self._calculate_retrace_score(retrace_info['retrace_pct'])
+            shrink_score = self._calculate_shrink_score(volume_info['shrink_pct'])
+            stop_signal_score = self._calculate_stop_signal_score(stop_signal_info)
+            recent_strength_score = self._calculate_recent_strength_score(
+                retrace_info['retrace_pct'], retrace_info['days_since_zt']
             )
+            
+            total_score = retrace_score + shrink_score + stop_signal_score + recent_strength_score
             
             # 判断是否出现买入信号
             if total_score < 65:
                 return None
             
             # 生成交易建议
-            signal = '强烈买入' if total_score >= 85 else '买入' if total_score >= 75 else '观望'
+            signal = '强烈买入' if total_score >= 85 else '买入' if total_score >= 75 else '关注'
             
             latest = df.iloc[-1]
             
@@ -150,14 +159,17 @@ class LimitUpRetraceAnalyzer:
                 'limit_up_date': limit_up_info['date'],
                 'limit_up_price': round(limit_up_info['price'], 2),
                 'retrace_pct': round(retrace_info['retrace_pct'], 2),
-                'support_level': support_info['level'],
-                'support_price': round(support_info['price'], 2),
-                'volume_shrink': round(volume_info['shrink_ratio'] * 100, 1),
+                'support_level': retrace_info.get('support_level', '涨停价'),
+                'support_price': round(limit_up_info['price'], 2),
+                'volume_shrink': round(volume_info['shrink_pct'], 1),
                 'stop_signal': stop_signal_info['signal_type'],
+                'days_since_zt': retrace_info['days_since_zt'],
                 'details': {
-                    'limit_up': limit_up_quality,
+                    'retrace_score': round(retrace_score, 1),
+                    'shrink_score': round(shrink_score, 1),
+                    'stop_signal_score': round(stop_signal_score, 1),
+                    'recent_strength_score': round(recent_strength_score, 1),
                     'retrace': retrace_info,
-                    'support': support_info,
                     'volume': volume_info,
                     'stop_signal': stop_signal_info
                 }
@@ -225,101 +237,53 @@ class LimitUpRetraceAnalyzer:
         # 计算回调幅度
         retrace_pct = (limit_up_price - current_price) / limit_up_price * 100
         
-        # 计算回调天数
-        retrace_days = len(df) - limit_up_info['index'] - 1
+        # 计算距涨停天数
+        days_since_zt = len(df) - limit_up_info['index'] - 1
         
         # 判断是否在回调
-        is_retracing = 0 < retrace_pct <= 15 and retrace_days >= 1
-        
-        # 评分
-        if retrace_pct <= 5:
-            score = 100
-        elif retrace_pct <= 10:
-            score = 85
-        elif retrace_pct <= 15:
-            score = 70
-        else:
-            score = 0
+        is_retracing = 0 < retrace_pct <= 25 and days_since_zt >= 1
         
         return {
             'is_retracing': is_retracing,
             'retrace_pct': retrace_pct,
-            'retrace_days': retrace_days,
+            'days_since_zt': days_since_zt,
             'limit_up_price': limit_up_price,
             'current_price': current_price,
-            'score': score
+            'support_level': '涨停价'
+        }
+    
+    def _analyze_volume(self, df: pd.DataFrame, limit_up_info: Dict, retrace_info: Dict) -> Dict:
+        """分析成交量 - 计算回调期间相对涨停日的缩量程度"""
+        latest = df.iloc[-1]
+        zt_idx = limit_up_info['index']
+        
+        # 计算涨停后回调期间的成交量均值
+        post_zt = df.iloc[zt_idx+1:].copy()
+        if len(post_zt) == 0:
+            return {'shrink_pct': 0, 'current_vol': latest['volume'], 'avg_post_vol': 0}
+        
+        avg_post_vol = post_zt['volume'].mean()
+        zt_vol = limit_up_info['volume']
+        
+        # 缩量程度: (1 - 回调均量/涨停量) * 100
+        # 正数=缩量，负数=放量
+        shrink_pct = (1 - avg_post_vol / zt_vol) * 100 if zt_vol > 0 else 0
+        
+        return {
+            'shrink_pct': shrink_pct,
+            'current_vol': latest['volume'],
+            'avg_post_vol': avg_post_vol,
+            'zt_vol': zt_vol
         }
     
     def _analyze_support(self, df: pd.DataFrame, limit_up_info: Dict, retrace_info: Dict) -> Dict:
-        """分析支撑位"""
-        latest = df.iloc[-1]
-        current_price = latest['close']
-        
-        # 可能的支撑位
-        support_levels = [
-            ('涨停价', limit_up_info['price']),
-            ('MA5', latest['MA5']),
-            ('前高', df['close'].rolling(window=20).max().iloc[-5] if len(df) >= 5 else latest['close'])
-        ]
-        
-        # 找到最近的支撑位
-        closest_support = None
-        min_distance = float('inf')
-        
-        for level_name, level_price in support_levels:
-            if pd.isna(level_price):
-                continue
-            distance = abs(current_price - level_price) / current_price * 100
-            if distance < min_distance:
-                min_distance = distance
-                closest_support = (level_name, level_price)
-        
-        # 判断是否回踩支撑位
-        is_at_support = min_distance <= 2  # 2%容忍度
-        
-        # 评分
-        if closest_support and closest_support[0] == '涨停价' and min_distance <= 1:
-            score = 100
-        elif closest_support and closest_support[0] == '涨停价':
-            score = 85
-        elif is_at_support:
-            score = 70
-        else:
-            score = max(0, 70 - min_distance * 10)
-        
+        """分析支撑位（保留兼容）"""
         return {
-            'level': closest_support[0] if closest_support else None,
-            'price': closest_support[1] if closest_support else None,
-            'distance': round(min_distance, 2),
-            'is_at_support': is_at_support,
-            'score': score
-        }
-    
-    def _analyze_volume(self, df: pd.DataFrame, retrace_info: Dict) -> Dict:
-        """分析成交量"""
-        latest = df.iloc[-1]
-        volume_ma3 = latest['volume_ma3']
-        
-        if volume_ma3 == 0 or pd.isna(volume_ma3):
-            return {'shrink_ratio': 1, 'score': 0}
-        
-        shrink_ratio = latest['volume'] / volume_ma3
-        
-        # 评分
-        if shrink_ratio < 0.3:
-            score = 100
-        elif shrink_ratio < 0.4:
-            score = 85
-        elif shrink_ratio < 0.5:
-            score = 70
-        else:
-            score = max(0, 100 - (shrink_ratio - 0.5) * 200)
-        
-        return {
-            'shrink_ratio': shrink_ratio,
-            'current_volume': latest['volume'],
-            'volume_ma3': volume_ma3,
-            'score': round(score, 2)
+            'level': '涨停价',
+            'price': limit_up_info['price'],
+            'distance': round(retrace_info['retrace_pct'], 2),
+            'is_at_support': True,
+            'score': 0
         }
     
     def _analyze_stop_signal(self, df: pd.DataFrame) -> Dict:
@@ -365,42 +329,7 @@ class LimitUpRetraceAnalyzer:
             'is_small_yang': is_small_yang,
             'score': score
         }
-    
-    def _evaluate_limit_up_quality(self, limit_up_info: Dict) -> Dict:
-        """评估涨停质量"""
-        change_pct = limit_up_info['change_pct']
-        
-        # 根据涨停类型评分
-        if change_pct >= 10:  # 一字板或T字板
-            quality = 'excellent'
-            score = 100
-        elif change_pct >= 9.8:
-            quality = 'good'
-            score = 85
-        elif change_pct >= 9.5:
-            quality = 'fair'
-            score = 70
-        else:
-            quality = 'poor'
-            score = 50
-        
-        return {
-            'quality': quality,
-            'change_pct': change_pct,
-            'score': score
-        }
-    
-    def _calculate_score(self, limit_up_quality: Dict, retrace_info: Dict,
-                        support_info: Dict, volume_info: Dict, stop_signal_info: Dict) -> float:
-        """计算综合得分"""
-        total_score = (
-            limit_up_quality['score'] * self.weights['limit_up_quality'] +
-            retrace_info['score'] * self.weights['retrace_quality'] +
-            support_info['score'] * self.weights['support_strength'] +
-            volume_info['score'] * self.weights['volume_shrink'] +
-            stop_signal_info['score'] * self.weights['stop_signal']
-        )
-        return total_score
+
 
 if __name__ == '__main__':
     # 测试

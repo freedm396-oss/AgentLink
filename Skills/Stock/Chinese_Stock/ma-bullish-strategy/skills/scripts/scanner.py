@@ -88,8 +88,8 @@ def analyze_watchlist(analyzer: MABullishAnalyzer, sector: str = None, top_n: in
         sectors_to_scan = watchlist
 
     print(f"📋 开始分析{'自选股池' + ('-' + sector if sector else '')}...")
-    total_core = sum(len(d['core']) for d in sectors_to_scan.values())
-    total_focus = sum(len(d['focus']) for d in sectors_to_scan.values())
+    total_core = sum(len(d.get('core', [])) for d in sectors_to_scan.values())
+    total_focus = sum(len(d.get('focus', [])) for d in sectors_to_scan.values())
     print(f"   core 标的: {total_core}只 | focus 标的: {total_focus}只")
     print(f"   数据源: {analyzer.data_adapter.source}")
     print("-" * 60)
@@ -104,45 +104,63 @@ def analyze_watchlist(analyzer: MABullishAnalyzer, sector: str = None, top_n: in
             if stock_count % 20 == 0:
                 print(f"  进度: {stock_count}只已分析...")
             result = analyzer.analyze_stock(code, name)
-            if result and result.get('is_bullish') and result['score'] >= 70:
-                result['sector'] = sector_name
-                result['is_core'] = (name, code) in data.get('core', [])
-                candidates.append(result)
-                print(f"  ✅ [{tag}{sector_name}] {name}({code}): {result['score']}分")
+            if result and result.get('is_bullish') and result['score'] >= 72:
+                # 去重（同一code只保留最高分）
+                existing = next((c for c in candidates if c['code'] == code), None)
+                if existing:
+                    if result['score'] > existing['score']:
+                        existing.update(result)
+                        existing['sector'] = sector_name
+                else:
+                    result['sector'] = sector_name
+                    result['is_core'] = (name, code) in data.get('core', [])
+                    candidates.append(result)
+                    print(f"  ✅ [{tag}{sector_name}] {name}({code}): {result['score']}分")
 
     candidates.sort(key=lambda x: x['score'], reverse=True)
     print(f"\n分析完成，共发现 {len(candidates)} 只符合条件的股票")
     return candidates[:top_n]
 
 
-def print_results(results: List[Dict], title: str = "扫描结果"):
+def print_results(results: List[Dict], title: str = "扫描结果", market_env=None):
     """打印结果"""
     print("\n" + "="*80)
     print(f"均线多头排列策略 - {title}")
     print(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 显示市场环境
+    if market_env:
+        summary = market_env.get_summary()
+        index_str = ', '.join([f"{n}{g:+.2f}%" for n, g in summary.get('指数涨跌', [])])
+        print(f"📊 市场环境: 涨停{summary['涨停家数']}家 | 市场评分{summary['总分']:.0f}分 | {index_str}")
+    
     print("="*80)
     print()
 
     if not results:
-        print("未发现符合条件的股票")
+        print("未发现符合条件的股票（阈值: 80分）")
         print()
         print("说明：")
         print("  - 当前市场无均线多头排列股票")
-        print("  - 均线排列不符合要求")
+        print("  - 均线排列强度不足")
+        print("  - 市场环境偏弱")
         return
 
-    print(f"发现 {len(results)} 只符合条件的股票")
+    print(f"发现 {len(results)} 只符合条件的股票（阈值: 72分）")
     print()
 
     for i, r in enumerate(results, 1):
-        emoji = '🔥' if r['score'] >= 85 else '✅' if r['score'] >= 75 else '👀'
+        emoji = '🔥' if r['score'] >= 82 else '✅' if r['score'] >= 72 else '👀'
         sector_tag = f"[{r.get('sector','?')}]" if 'sector' in r else ''
         core_tag = '⭐' if r.get('is_core') else ''
         print(f"{emoji} {i}. {r['name']}({r['code']}) {core_tag}{sector_tag}")
-        print(f"   综合得分: {r['score']}分 | 信号: {r.get('signal', '多头排列')}")
-        print(f"   当前价: {r.get('current_price', 'N/A')}元")
-        print(f"   均线状态: {r.get('ma_status', 'N/A')}")
-        print(f"   趋势强度: {r.get('trend_strength', 'N/A')}")
+        print(f"   综合得分: {r['score']}分")
+        print(f"   当前价: {r.get('current_price', 'N/A')}元 | 均线状态: {r.get('ma_status', 'N/A')}")
+        
+        # 显示分项得分
+        sigs = r.get('signals', {})
+        if sigs:
+            print(f"   评分明细: 均线{int(sigs.get('ma_arrangement',0))} + 价位置{int(sigs.get('price_position',0))} + 量能{int(sigs.get('volume_trend',0))} + 趋势{int(sigs.get('trend_strength',0))} + 市场{int(sigs.get('market_environment',0))}")
         print()
 
     print("="*80)
@@ -180,18 +198,18 @@ def main():
 
     if args.scan:
         results = scan_all_stocks(analyzer, top_n=args.top)
-        print_results(results, "全市场扫描")
+        print_results(results, "全市场扫描", analyzer.market_env)
 
     elif args.sector:
         sector_analyzer = SectorAnalyzer(analyzer)
         results = sector_analyzer.analyze_sector(args.sector)
         results = [r for r in results if r.get('is_bullish')]
-        print_results(results, f"{args.sector}板块分析")
+        print_results(results, f"{args.sector}板块分析", analyzer.market_env)
 
     elif args.stock:
         result = analyzer.analyze_stock(args.stock, args.name)
         if result:
-            print_results([result], "单股分析")
+            print_results([result], "单股分析", analyzer.market_env)
         else:
             print(f"{args.stock} 不符合均线多头排列条件")
 
@@ -209,7 +227,7 @@ def main():
             results = analyze_watchlist(analyzer, sector=None, top_n=args.top)
         else:
             results = analyze_watchlist(analyzer, sector=args.pool, top_n=args.top)
-        print_results(results, f"自选股池-{args.pool}板块" if args.pool != 'all' else "全自选股池")
+        print_results(results, f"自选股池-{args.pool}板块" if args.pool != 'all' else "全自选股池", analyzer.market_env)
 
     else:
         parser.print_help()

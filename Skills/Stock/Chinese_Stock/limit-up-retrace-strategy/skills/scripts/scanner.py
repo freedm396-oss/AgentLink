@@ -29,11 +29,12 @@ from skills.scripts.analyzer import LimitUpRetraceAnalyzer
 def _get_recent_limit_up_stocks() -> List[Tuple[str, str]]:
     """
     获取近10个交易日内的涨停股票列表
-    仅使用 akshare（唯一支持涨停池的数据源）
+    使用 akshare stock_zt_pool_em 逐日查询
     返回: [(code, name), ...]
     """
     import warnings
     warnings.filterwarnings('ignore')
+    import time
 
     try:
         import akshare as ak
@@ -44,23 +45,21 @@ def _get_recent_limit_up_stocks() -> List[Tuple[str, str]]:
 
     results = []
     today = datetime.now()
+    seen_codes = set()  # 去重
 
-    # 近10个交易日（含今日，若已收盘则含今日涨停）
-    # 周末不交易，最多往前找14个自然日
+    # 近10个交易日：逐日查询涨停池
     for days_back in range(0, 14):
+        if len(results) >= 300:  # 收集足够多则停止
+            break
         check_date = today - timedelta(days=days_back)
         if check_date.weekday() >= 5:  # 跳过周末
             continue
         date_str = check_date.strftime("%Y%m%d")
 
         try:
-            if days_back == 0:
-                # 今日：实时涨停池
-                df = ak.stock_zt_pool_em(date=date_str)
-            else:
-                # 历史：历史涨停池
-                df = ak.stock_zt_pool_hist_em(symbol="涨停股", date=date_str)
-        except Exception:
+            df = ak.stock_zt_pool_em(date=date_str)
+            time.sleep(0.3)  # 避免请求过快
+        except Exception as e:
             continue
 
         if df is None or df.empty:
@@ -71,13 +70,11 @@ def _get_recent_limit_up_stocks() -> List[Tuple[str, str]]:
             try:
                 code = str(row.get('代码', '')).strip()
                 name = str(row.get('名称', row.get('股票名称', ''))).strip()
-                if code and len(code) == 6 and code not in [r[0] for r in results]:
+                if code and len(code) == 6 and code not in seen_codes:
+                    seen_codes.add(code)
                     results.append((code, name))
             except Exception:
                 continue
-
-        if len(results) >= 200:  # 最多收集200只，避免重复遍历
-            break
 
     return results
 
